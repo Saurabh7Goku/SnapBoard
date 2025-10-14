@@ -46,6 +46,7 @@ const FormulaWhiteboard = () => {
   const [activeTab, setActiveTab] = useState('myBoards');
   const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false);
   const fileInputRef = useRef(null);
+  const isInitialLoad = useRef(true);
 
   const CARD_COLORS = [
     '#FEF3C7', '#DBEAFE', '#eec1f0ff', '#D1FAE5',
@@ -72,10 +73,26 @@ const FormulaWhiteboard = () => {
 
   useEffect(() => {
     if (!currentBoard || !user) return;
+    
+    // Reset the initial load flag when board changes
+    isInitialLoad.current = true;
+    
     const elementsRef = ref(db, `boards/${currentBoard.id}/elements`);
     const elementsUnsub = onValue(elementsRef, (snap) => {
       const data = snap.val();
-      setElements(data ? Object.entries(data).map(([id, el]) => ({ id, ...el })) : []);
+      const loadedElements = data ? Object.entries(data).map(([id, el]) => ({ id, ...el })) : [];
+      setElements(loadedElements);
+      
+      // Only reset z-indexes on initial load, not on every update
+      if (isInitialLoad.current) {
+        const resetZIndexMap = {};
+        loadedElements.forEach(el => {
+          resetZIndexMap[el.id] = 0;
+        });
+        setZIndexMap(resetZIndexMap);
+        setMaxZIndex(0);
+        isInitialLoad.current = false;
+      }
     });
     const collabRef = ref(db, `boards/${currentBoard.id}/collaborators`);
     const collabUnsub = onValue(collabRef, (snap) => {
@@ -189,17 +206,24 @@ const FormulaWhiteboard = () => {
   const addFormula = async () => {
     if (!currentBoard) return;
     const newRef = push(ref(db, `boards/${currentBoard.id}/elements`));
+    const newId = newRef.key;
     await set(newRef, {
       title: 'New Formula', latex: 'E = mc^2', subject: 'Physics', topic: 'Relativity', notes: '',
       x: Math.random() * (window.innerWidth * 0.5) + 100, y: Math.random() * (window.innerHeight * 0.3) + 100,
       color: CARD_COLORS[Math.floor(Math.random() * CARD_COLORS.length)],
       width: 224, height: 200, type: 'formula', createdAt: serverTimestamp()
     });
+    
+    // Set new card to highest z-index
+    const newZ = maxZIndex + 1;
+    setZIndexMap(p => ({ ...p, [newId]: newZ }));
+    setMaxZIndex(newZ);
   };
 
   const addNote = async () => {
     if (!currentBoard) return;
     const newRef = push(ref(db, `boards/${currentBoard.id}/elements`));
+    const newId = newRef.key;
     await set(newRef, {
       title: 'Note',
       content: 'Your note here...',
@@ -211,11 +235,17 @@ const FormulaWhiteboard = () => {
       type: 'note',
       createdAt: serverTimestamp()
     });
+    
+    // Set new card to highest z-index
+    const newZ = maxZIndex + 1;
+    setZIndexMap(p => ({ ...p, [newId]: newZ }));
+    setMaxZIndex(newZ);
   };
 
   const addTable = async () => {
     if (!currentBoard) return;
     const newRef = push(ref(db, `boards/${currentBoard.id}/elements`));
+    const newId = newRef.key;
     await set(newRef, {
       title: 'Table',
       columns: ['Col 1', 'Col 2'],
@@ -230,16 +260,27 @@ const FormulaWhiteboard = () => {
       type: 'table',
       createdAt: serverTimestamp()
     });
+    
+    // Set new card to highest z-index
+    const newZ = maxZIndex + 1;
+    setZIndexMap(p => ({ ...p, [newId]: newZ }));
+    setMaxZIndex(newZ);
   };
 
   const addImage = async (url) => {
     if (!url || !currentBoard) return;
     const newRef = push(ref(db, `boards/${currentBoard.id}/elements`));
+    const newId = newRef.key;
     await set(newRef, {
       title: 'Image', url, notes: '', x: Math.random() * (window.innerWidth * 0.5) + 100,
       y: Math.random() * (window.innerHeight * 0.3) + 100, color: '#ffffff',
       width: 200, height: 150, type: 'image', createdAt: serverTimestamp()
     });
+    
+    // Set new card to highest z-index
+    const newZ = maxZIndex + 1;
+    setZIndexMap(p => ({ ...p, [newId]: newZ }));
+    setMaxZIndex(newZ);
   };
 
   const handleImageUpload = (e) => {
@@ -297,12 +338,18 @@ const FormulaWhiteboard = () => {
       const parsed = JSON.parse(text);
       if (parsed.action === 'add') {
         const newRef = push(ref(db, `boards/${currentBoard.id}/elements`));
+        const newId = newRef.key;
         await set(newRef, {
           title: parsed.title, latex: parsed.latex, subject: parsed.subject, topic: parsed.topic, notes: '',
           x: Math.random() * 300 + 100, y: Math.random() * 200 + 100,
           color: CARD_COLORS[Math.floor(Math.random() * CARD_COLORS.length)],
           width: 224, height: 200, type: 'formula', createdAt: serverTimestamp()
         });
+        
+        // Set new card to highest z-index
+        const newZ = maxZIndex + 1;
+        setZIndexMap(p => ({ ...p, [newId]: newZ }));
+        setMaxZIndex(newZ);
       }
       setAiPrompt('');
     } catch (err) {
@@ -329,12 +376,39 @@ const FormulaWhiteboard = () => {
     }
   };
 
+  const normalizeZIndexes = (tappedId) => {
+    // Get all element IDs sorted by their current z-index
+    const sortedElements = Object.entries(zIndexMap)
+      .sort(([, zA], [, zB]) => zA - zB);
+    
+    // Reassign z-indexes sequentially (1, 2, 3...)
+    const newZIndexMap = {};
+    sortedElements.forEach(([id], index) => {
+      newZIndexMap[id] = index + 1;
+    });
+    
+    // Put tapped card on top
+    const newMaxZ = sortedElements.length + 1;
+    newZIndexMap[tappedId] = newMaxZ;
+    
+    setZIndexMap(newZIndexMap);
+    setMaxZIndex(newMaxZ);
+  };
+
   const handleDragStart = (e, id) => {
     if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
     setDraggedId(id);
-    const newZ = maxZIndex + 1;
-    setZIndexMap(p => ({ ...p, [id]: newZ }));
-    setMaxZIndex(newZ);
+    
+    // Check if we need to normalize (threshold: 1000)
+    if (maxZIndex >= 1000) {
+      normalizeZIndexes(id);
+    } else {
+      // Regular increment approach
+      const newZ = maxZIndex + 1;
+      setZIndexMap(p => ({ ...p, [id]: newZ }));
+      setMaxZIndex(newZ);
+    }
+    
     const el = elements.find(f => f.id === id);
     setDragOffset({ x: e.clientX - el.x, y: e.clientY - el.y });
   };
@@ -573,13 +647,6 @@ const FormulaWhiteboard = () => {
               alt={el.title}
               className="w-full h-full object-contain rounded"
             />
-            {/* <input
-              type="text"
-              value={el.url}
-              onChange={e => updateElement(el.id, { url: e.target.value })}
-              placeholder="Image URL"
-              className="w-full px-2 py-1 text-xs bg-white/50 backdrop-blur rounded border border-white/30 mt-2"
-            /> */}
             <textarea
               value={el.notes || ''}
               onChange={e => updateElement(el.id, { notes: e.target.value })}
@@ -755,7 +822,7 @@ const FormulaWhiteboard = () => {
         )}
         <div className="w-px h-5 bg-gray-300"></div>
         <div className="flex items-center gap-1">
-          <input type="text" value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleAI()} placeholder="Add Linea formula..." className="px-3 py-1.5 text-sm text-gray-600 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500 w-36" />
+          <input type="text" value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleAI()} placeholder="Add Linear formula..." className="px-3 py-1.5 text-sm text-gray-600 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500 w-36" />
           <button onClick={handleAI} disabled={isProcessing} className="p-1.5 bg-purple-500 text-white rounded-full hover:bg-purple-600 transition disabled:opacity-50"><Wand2 size={14} /></button>
         </div>
         <div className="w-px h-5 bg-gray-300"></div>
