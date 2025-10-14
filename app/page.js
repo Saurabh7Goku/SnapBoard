@@ -48,8 +48,8 @@ const FormulaWhiteboard = () => {
   const fileInputRef = useRef(null);
 
   const CARD_COLORS = [
-    '#FEF3C7', '#DBEAFE', '#FCE7F3', '#D1FAE5',
-    '#FED7D7', '#E2E8F0', '#FEF9C3', '#DCFCE7'
+    '#FEF3C7', '#DBEAFE', '#eec1f0ff', '#D1FAE5',
+    '#eebebeff', '#d6d1f0ff', '#FEF9C3', '#cbf8f6ff'
   ];
 
   useEffect(() => {
@@ -518,41 +518,46 @@ const FormulaWhiteboard = () => {
               rows={2}
             />
           </>
-        ) : el.type === 'table' ? (
-          <div className="h-[calc(100%-40px)] overflow-auto">
-            <table className="w-full border-collapse text-xs">
+        ) : el.type === "table" ? (
+          <div className="overflow-x-auto rounded-2xl border border-gray-300 shadow-sm bg-white/70 backdrop-blur-sm">
+            <table className="min-w-full border-collapse">
               <thead>
-                <tr>
+                <tr className="bg-gray-100 text-gray-800 text-sm font-semibold">
                   {el.columns.map((col, i) => (
-                    <th key={i} className="border bg-gray-100 p-1.5">
+                    <th key={i} className="px-2 py-2 border-b border-gray-300">
                       <input
                         type="text"
                         value={col}
-                        onChange={e => {
+                        onChange={(e) => {
                           const newCols = [...el.columns];
                           newCols[i] = e.target.value;
                           updateTable(el.id, { columns: newCols });
                         }}
-                        className="w-full bg-transparent text-center font-medium"
+                        className="w-full bg-transparent text-center font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-400 rounded-md px-1 py-1 transition"
                       />
                     </th>
                   ))}
                 </tr>
               </thead>
+
               <tbody>
                 {el.rows.map((row, i) => (
-                  <tr key={row.id}>
+                  <tr
+                    key={i}
+                    className={`text-sm ${i % 2 === 0 ? "bg-gray-50" : "bg-white"
+                      } hover:bg-indigo-50 transition`}
+                  >
                     {row.cells.map((cell, j) => (
-                      <td key={j} className="border p-1.5">
+                      <td key={j} className="px-4 py-2 border-b border-gray-200 text-center">
                         <input
                           type="text"
                           value={cell}
-                          onChange={e => {
+                          onChange={(e) => {
                             const newRows = [...el.rows];
                             newRows[i].cells[j] = e.target.value;
                             updateTable(el.id, { rows: newRows });
                           }}
-                          className="w-full bg-transparent text-center"
+                          className="w-full bg-transparent text-center focus:outline-none focus:ring-2 focus:ring-indigo-300 rounded-md px-1 py-1 transition"
                         />
                       </td>
                     ))}
@@ -677,7 +682,7 @@ const FormulaWhiteboard = () => {
   if (showDashboard && !currentBoard) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-        <div className="bg-white shadow-sm border-b sticky top-0 z-50">
+        <div className="bg-white shadow-sm border-b sticky top-0 z-[100]">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
             <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Formula Boards</h1>
             <button onClick={signOutUser} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"><LogOut size={20} /></button>
@@ -787,7 +792,7 @@ const FormulaWhiteboard = () => {
       </div>
 
       {hoveredFormula && (
-        <div className="fixed z-50 bg-white rounded-xl shadow-2xl p-6 border-2 border-red-500 max-w-md w-full max-h-[80vh] overflow-auto"
+        <div className="fixed z-100 bg-white rounded-xl shadow-2xl p-6 border-2 border-red-500 max-w-md w-full max-h-[80vh] overflow-auto"
           style={{
             left: '50%',
             top: '50%',
@@ -800,7 +805,7 @@ const FormulaWhiteboard = () => {
       )}
 
       {showShareModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full">
             <h2 className="text-xl font-bold mb-4 text-gray-800">Share Board</h2>
             <p className="text-sm text-gray-600 mb-4">Invite collaborators by email or share a link</p>
@@ -818,7 +823,7 @@ const FormulaWhiteboard = () => {
       )}
 
       {showKeyModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
             <h2 className="text-xl font-bold mb-3 text-gray-800">Gemini API Key</h2>
             <p className="text-xs text-gray-600 mb-4">Get your key from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener" className="text-blue-500 underline">Google AI Studio</a></p>
