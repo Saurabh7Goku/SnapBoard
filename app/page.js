@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Wand2, Trash2, LogOut, Users, Share2, Copy, Menu, Upload, Settings } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Plus, Wand2, Trash2, LogOut, Users, Share2, Copy, Menu, Upload, Settings, Type, Table, SquarePlus } from 'lucide-react';
 import katex from 'katex';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
@@ -46,6 +46,11 @@ const FormulaWhiteboard = () => {
   const [activeTab, setActiveTab] = useState('myBoards');
   const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false);
   const fileInputRef = useRef(null);
+
+  const CARD_COLORS = [
+    '#FEF3C7', '#DBEAFE', '#FCE7F3', '#D1FAE5',
+    '#FED7D7', '#E2E8F0', '#FEF9C3', '#DCFCE7'
+  ];
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -187,8 +192,43 @@ const FormulaWhiteboard = () => {
     await set(newRef, {
       title: 'New Formula', latex: 'E = mc^2', subject: 'Physics', topic: 'Relativity', notes: '',
       x: Math.random() * (window.innerWidth * 0.5) + 100, y: Math.random() * (window.innerHeight * 0.3) + 100,
-      color: ['#FEF3C7', '#DBEAFE', '#FCE7F3', '#D1FAE5'][Math.floor(Math.random() * 4)],
+      color: CARD_COLORS[Math.floor(Math.random() * CARD_COLORS.length)],
       width: 224, height: 200, type: 'formula', createdAt: serverTimestamp()
+    });
+  };
+
+  const addNote = async () => {
+    if (!currentBoard) return;
+    const newRef = push(ref(db, `boards/${currentBoard.id}/elements`));
+    await set(newRef, {
+      title: 'Note',
+      content: 'Your note here...',
+      x: Math.random() * (window.innerWidth * 0.5) + 100,
+      y: Math.random() * (window.innerHeight * 0.3) + 100,
+      color: CARD_COLORS[Math.floor(Math.random() * CARD_COLORS.length)],
+      width: 224,
+      height: 200,
+      type: 'note',
+      createdAt: serverTimestamp()
+    });
+  };
+
+  const addTable = async () => {
+    if (!currentBoard) return;
+    const newRef = push(ref(db, `boards/${currentBoard.id}/elements`));
+    await set(newRef, {
+      title: 'Table',
+      columns: ['Col 1', 'Col 2'],
+      rows: [
+        { id: 'row1', cells: ['Cell 1', 'Cell 2'] }
+      ],
+      x: Math.random() * (window.innerWidth * 0.5) + 100,
+      y: Math.random() * (window.innerHeight * 0.3) + 100,
+      color: CARD_COLORS[Math.floor(Math.random() * CARD_COLORS.length)],
+      width: 300,
+      height: 200,
+      type: 'table',
+      createdAt: serverTimestamp()
     });
   };
 
@@ -212,6 +252,12 @@ const FormulaWhiteboard = () => {
   };
 
   const updateElement = async (id, updates) => {
+    if (!currentBoard) return;
+    setElements(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+    await update(ref(db, `boards/${currentBoard.id}/elements/${id}`), updates);
+  };
+
+  const updateTable = async (id, updates) => {
     if (!currentBoard) return;
     setElements(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
     await update(ref(db, `boards/${currentBoard.id}/elements/${id}`), updates);
@@ -254,7 +300,7 @@ const FormulaWhiteboard = () => {
         await set(newRef, {
           title: parsed.title, latex: parsed.latex, subject: parsed.subject, topic: parsed.topic, notes: '',
           x: Math.random() * 300 + 100, y: Math.random() * 200 + 100,
-          color: ['#FEF3C7', '#DBEAFE', '#FCE7F3', '#D1FAE5'][Math.floor(Math.random() * 4)],
+          color: CARD_COLORS[Math.floor(Math.random() * CARD_COLORS.length)],
           width: 224, height: 200, type: 'formula', createdAt: serverTimestamp()
         });
       }
@@ -267,8 +313,11 @@ const FormulaWhiteboard = () => {
   };
 
   const getContrastColor = (bgColor) => {
-    const rgb = parseInt(bgColor.replace('#', ''), 16);
-    const brightness = ((rgb >> 16 & 0xff) * 299 + (rgb >> 8 & 0xff) * 587 + (rgb & 0xff) * 114) / 1000;
+    const hex = bgColor.replace('#', '');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
     return brightness > 128 ? '#1e293b' : '#f8fafc';
   };
 
@@ -281,7 +330,7 @@ const FormulaWhiteboard = () => {
   };
 
   const handleDragStart = (e, id) => {
-    if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+    if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
     setDraggedId(id);
     const newZ = maxZIndex + 1;
     setZIndexMap(p => ({ ...p, [id]: newZ }));
@@ -291,29 +340,339 @@ const FormulaWhiteboard = () => {
   };
 
   const handleGlobalMove = (e) => {
-    if (draggedId) updateElement(draggedId, { x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
-    if (resizingId) updateElement(resizingId, { width: Math.max(100, resizeStart.width + (e.clientX - resizeStart.x)), height: Math.max(80, resizeStart.height + (e.clientY - resizeStart.y)) });
+    if (draggedId) {
+      // Throttle updates for smoother drag
+      requestAnimationFrame(() => {
+        updateElement(draggedId, { x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
+      });
+    }
+    if (resizingId) {
+      requestAnimationFrame(() => {
+        updateElement(resizingId, {
+          width: Math.max(120, resizeStart.width + (e.clientX - resizeStart.x)),
+          height: Math.max(100, resizeStart.height + (e.clientY - resizeStart.y))
+        });
+      });
+    }
   };
+
+  const addTableRowsCols = (el) => {
+    const rowsInput = prompt('How many additional rows?', '1');
+    const colsInput = prompt('How many additional columns?', '1');
+    const addRows = parseInt(rowsInput) || 0;
+    const addCols = parseInt(colsInput) || 0;
+
+    if (addRows <= 0 && addCols <= 0) return;
+
+    let newRows = [...el.rows];
+    let newCols = [...el.columns];
+
+    // Add columns
+    if (addCols > 0) {
+      newCols = [...newCols, ...Array(addCols).fill('').map((_, i) => `Col ${newCols.length + i + 1}`)];
+      newRows = newRows.map(row => ({
+        ...row,
+        cells: [...row.cells, ...Array(addCols).fill('')]
+      }));
+    }
+
+    // Add rows
+    if (addRows > 0) {
+      for (let i = 0; i < addRows; i++) {
+        newRows.push({
+          id: `row${Date.now()}-${i}`,
+          cells: Array(newCols.length).fill('')
+        });
+      }
+    }
+
+    updateTable(el.id, { columns: newCols, rows: newRows });
+  };
+
+  const renderElement = useCallback((el) => {
+    const zIndex = zIndexMap[el.id] || 0;
+    const bgColor = el.color;
+    const textColor = getContrastColor(bgColor);
+
+    const cardClasses = `absolute transition-transform duration-150 ease-out rounded-xl shadow-lg hover:shadow-2xl p-3 overflow-hidden ${el.type === 'image' ? 'border-4 border-dashed border-blue-300' : ''
+      }`;
+
+    return (
+      <div
+        key={el.id}
+        className={cardClasses}
+        style={{
+          left: `${el.x}px`,
+          top: `${el.y}px`,
+          width: `${el.width}px`,
+          height: `${el.height}px`,
+          zIndex,
+          backgroundColor: bgColor,
+          color: textColor,
+          willChange: 'transform'
+        }}
+        onMouseDown={e => handleDragStart(e, el.id)}
+        onMouseEnter={(e) => {
+          if (el.type === 'formula') {
+            const latexEl = e.currentTarget.querySelector('.bg-white\\/70');
+            if (latexEl && (latexEl.scrollWidth > latexEl.clientWidth || latexEl.scrollHeight > latexEl.clientHeight)) {
+              setHoveredFormula(el);
+            }
+          }
+        }}
+        onMouseLeave={() => setHoveredFormula(null)}
+      >
+        <div className="flex justify-between items-center mb-2 [&>*]:mb-0">
+          <input
+            type="text"
+            value={el.title}
+            onChange={e => updateElement(el.id, { title: e.target.value })}
+            className="text-lg font-bold bg-transparent border-none outline-none w-full"
+            style={{ color: textColor, fontFamily: 'Caveat, cursive' }}
+          />
+          <div className="flex gap-1">
+            {el.type === 'table' && (
+              <button
+                onClick={e => { e.stopPropagation(); addTableRowsCols(el); }}
+                className="p-1 text-gray-600 hover:text-blue-600 rounded hover:bg-blue-100 transition"
+                title="Add rows/columns"
+              >
+                <SquarePlus size={14} />
+              </button>
+            )}
+            <button
+              onClick={e => { e.stopPropagation(); deleteElement(el.id); }}
+              className="opacity-0 group-hover:opacity-100 transition p-1 hover:bg-red-500 hover:text-white rounded"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </div>
+
+        {el.type === 'formula' ? (
+          <div className="h-[calc(100%-60px)] flex flex-col">
+            <div
+              className="bg-white/70 backdrop-blur rounded-lg p-2 mb-2 text-center text-sm overflow-hidden flex-grow"
+              style={{ minHeight: '40px', flex: '0 0 auto' }}
+              dangerouslySetInnerHTML={renderLatex(el.latex, true)}
+            />
+            <input
+              type="text"
+              value={el.latex}
+              onChange={e => updateElement(el.id, { latex: e.target.value })}
+              placeholder="LaTeX formula"
+              className="w-full px-2 py-1 text-xs bg-white/50 backdrop-blur rounded border border-white/30 mb-2"
+            />
+            <div className="flex gap-2 mb-2 flex-wrap">
+              <input
+                type="text"
+                value={el.subject}
+                onChange={e => updateElement(el.id, { subject: e.target.value })}
+                className="px-2 py-0.5 text-xs bg-blue-200/50 backdrop-blur rounded-full flex-1 min-w-0"
+                placeholder="Subject"
+              />
+              <input
+                type="text"
+                value={el.topic}
+                onChange={e => updateElement(el.id, { topic: e.target.value })}
+                className="px-2 py-0.5 text-xs bg-green-200/50 backdrop-blur rounded-full flex-1 min-w-0"
+                placeholder="Topic"
+              />
+            </div>
+            {el.height >= 180 && (
+              <textarea
+                value={el.notes || ''}
+                onChange={e => updateElement(el.id, { notes: e.target.value })}
+                placeholder="Notes..."
+                className="w-full px-2 py-1 text-xs bg-white/50 backdrop-blur rounded border border-white/30 resize-none overflow-hidden mt-1"
+                style={{
+                  height: 'auto',
+                  minHeight: '1.5rem',
+                  maxHeight: '150px',
+                  fontFamily: 'Caveat, cursive',
+                  lineHeight: '1',
+                }}
+                onInput={e => {
+                  const textarea = e.target;
+                  textarea.style.height = 'auto';
+                  textarea.style.height = `${textarea.scrollHeight}px`;
+                }}
+              />
+            )}
+
+          </div>
+        ) : el.type === 'note' ? (
+          <>
+            <textarea
+              style={{ fontFamily: 'Caveat, cursive' }}
+              value={el.content}
+              onChange={e => updateElement(el.id, { content: e.target.value })}
+              className="w-full h-[calc(100%-40px)] px-2 py-1 bg-white/50 backdrop-blur rounded border border-white/30 resize-none"
+              placeholder="Write your note..."
+            />
+            <textarea
+              value={el.notes || ''}
+              onChange={e => updateElement(el.id, { notes: e.target.value })}
+              placeholder="Notes..."
+              className="w-full px-2 py-1 text-xs bg-white/50 backdrop-blur rounded border border-white/30 resize-none mt-2"
+              rows={2}
+            />
+          </>
+        ) : el.type === 'table' ? (
+          <div className="h-[calc(100%-40px)] overflow-auto">
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr>
+                  {el.columns.map((col, i) => (
+                    <th key={i} className="border bg-gray-100 p-1.5">
+                      <input
+                        type="text"
+                        value={col}
+                        onChange={e => {
+                          const newCols = [...el.columns];
+                          newCols[i] = e.target.value;
+                          updateTable(el.id, { columns: newCols });
+                        }}
+                        className="w-full bg-transparent text-center font-medium"
+                      />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {el.rows.map((row, i) => (
+                  <tr key={row.id}>
+                    {row.cells.map((cell, j) => (
+                      <td key={j} className="border p-1.5">
+                        <input
+                          type="text"
+                          value={cell}
+                          onChange={e => {
+                            const newRows = [...el.rows];
+                            newRows[i].cells[j] = e.target.value;
+                            updateTable(el.id, { rows: newRows });
+                          }}
+                          className="w-full bg-transparent text-center"
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : el.type === 'image' && (
+          <div className="h-[calc(100%-40px)] flex flex-col">
+            <img
+              src={el.url}
+              alt={el.title}
+              className="w-full h-full object-contain rounded"
+            />
+            {/* <input
+              type="text"
+              value={el.url}
+              onChange={e => updateElement(el.id, { url: e.target.value })}
+              placeholder="Image URL"
+              className="w-full px-2 py-1 text-xs bg-white/50 backdrop-blur rounded border border-white/30 mt-2"
+            /> */}
+            <textarea
+              value={el.notes || ''}
+              onChange={e => updateElement(el.id, { notes: e.target.value })}
+              placeholder="Notes..."
+              className="w-full px-2 py-0 text-xs bg-white/50 backdrop-blur rounded border border-white/30 resize-none mt-2"
+              rows={2}
+            />
+          </div>
+        )}
+
+        {!['table', 'formula', 'note', 'image'].includes(el.type) && (
+          <textarea
+            value={el.notes || ''}
+            onChange={e => updateElement(el.id, { notes: e.target.value })}
+            placeholder="Notes..."
+            className="w-full px-2 py-1 text-xs bg-white/50 backdrop-blur rounded border border-white/30 resize-none mt-2"
+            rows={2}
+          />
+        )}
+
+        <div
+          className="absolute bottom-0 right-0 w-4 h-4 bg-blue-500 cursor-se-resize rounded-tl-lg opacity-0 group-hover:opacity-100 transition"
+          onMouseDown={e => {
+            e.stopPropagation();
+            setResizingId(el.id);
+            setResizeStart({
+              x: e.clientX,
+              y: e.clientY,
+              width: el.width,
+              height: el.height
+            });
+          }}
+        />
+      </div>
+    );
+  }, [zIndexMap, getContrastColor, updateElement, deleteElement, updateTable, addTableRowsCols]);
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex flex-col items-center justify-center p-4 text-center">
+        {/* 🌟 Header Section */}
+        <div className="mb-8">
+          <h1 className="text-5xl md:text-6xl font-extrabold text-white tracking-tight drop-shadow-lg">
+            SnapBoard ✨
+          </h1>
+          <p className="text-lg md:text-xl text-white/80 mt-3">
+            Your AI-powered Formula & Notes Whiteboard
+          </p>
+          <p className="text-sm md:text-base text-white/60 mt-2">
+            Generate <span className="text-purple-300 font-medium">formulas</span>,{" "}
+            <span className="text-purple-300 font-medium">notes</span>, and{" "}
+            <span className="text-purple-300 font-medium">tables</span> instantly with AI.
+          </p>
+        </div>
+
+        {/* 🧠 Sign-in Card */}
         <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 md:p-12 max-w-md w-full shadow-2xl border border-white/20">
-          <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 text-center">Formula Board</h1>
-          <p className="text-white/70 text-center mb-8">Collaborative whiteboard for formulas</p>
-          <button onClick={signIn} className="w-full bg-white text-gray-900 px-6 py-3 rounded-xl font-semibold hover:bg-gray-100 transition transform hover:scale-105 flex items-center justify-center gap-3">
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">
+            Welcome to SnapBoard
+          </h2>
+          <p className="text-white/70 mb-8">
+            Collaborate and create smarter with AI assistance.
+          </p>
+
+          <button
+            onClick={signIn}
+            className="w-full bg-white text-gray-900 px-6 py-3 rounded-xl font-semibold hover:bg-gray-100 transition transform hover:scale-105 flex items-center justify-center gap-3"
+          >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+              />
             </svg>
             Sign in with Google
           </button>
         </div>
+
+        {/* 💬 Subtext */}
+        <p className="text-xs text-white/50 mt-6 max-w-md">
+          Start creating, collaborating, and visualizing your formulas and notes with AI.
+        </p>
       </div>
     );
   }
+
 
   if (showDashboard && !currentBoard) {
     return (
@@ -377,12 +736,13 @@ const FormulaWhiteboard = () => {
   if (!currentBoard) return null;
 
   return (
-    <div className="w-full h-screen bg-gradient-to-br from-slate-50 to-slate-100 overflow-hidden" onMouseMove={handleGlobalMove} onMouseUp={() => { setDraggedId(null); setResizingId(null); }}>
-      {/* Top Floating Bar */}
+    <div className="w-full h-screen bg-gradient-to-br from-slate-50 to-slate-100 overflow-hidden relative" onMouseMove={handleGlobalMove} onMouseUp={() => { setDraggedId(null); setResizingId(null); }}>
       <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-white/90 backdrop-blur-lg rounded-full shadow-lg px-6 py-3 border border-white/20 flex items-center gap-3 flex-wrap justify-center max-w-fit">
         <button onClick={() => { setShowDashboard(true); setCurrentBoard(null); }} className="px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-full transition">Dashboard</button>
         <div className="w-px h-5 bg-gray-300"></div>
         <button onClick={addFormula} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white text-sm rounded-full hover:bg-blue-600 transition"><Plus size={14} /> Formula</button>
+        <button onClick={addNote} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white text-sm rounded-full hover:bg-emerald-600 transition"><Type size={14} /> Note</button>
+        <button onClick={addTable} className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white text-sm rounded-full hover:bg-amber-600 transition"><Table size={14} /> Table</button>
         <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500 text-white text-sm rounded-full hover:bg-indigo-600 transition"><Upload size={14} /> Image</button>
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
         {currentBoard.owner === user.uid && (
@@ -408,56 +768,37 @@ const FormulaWhiteboard = () => {
         </div>
       </div>
 
-      {/* Canvas */}
       <div className="w-full h-full pt-20 overflow-auto">
-        <div className="relative w-full h-full">
+        <div className="relative w-full h-full min-h-[calc(100vh-80px)]">
           {elements.map(el => (
-            <div key={el.id} className="absolute transition-all" style={{ left: `${el.x}px`, top: `${el.y}px`, width: `${el.width || 224}px`, height: `${el.height || 200}px`, zIndex: zIndexMap[el.id] || 0 }} onMouseDown={e => handleDragStart(e, el.id)} onMouseEnter={() => el.type === 'formula' && el.latex?.length > 30 && setHoveredFormula(el)} onMouseLeave={() => setHoveredFormula(null)}>
-              <div className="relative w-full h-full rounded-xl shadow-lg hover:shadow-2xl transition-shadow p-3 overflow-hidden caveat" style={{ backgroundColor: el.color, color: getContrastColor(el.color) }}>
-                <div className="flex justify-between items-start mb-2">
-                  <input type="text" value={el.title} onChange={e => updateElement(el.id, { title: e.target.value })} className="text-lg font-bold bg-transparent border-none outline-none w-full caveat" style={{ color: getContrastColor(el.color) }} />
-                  <button onClick={e => { e.stopPropagation(); deleteElement(el.id); }} className="opacity-0 hover:opacity-100 transition p-1 hover:bg-red-500 hover:text-white rounded flex-shrink-0"><Trash2 size={14} /></button>
-                </div>
-                {el.type === 'formula' ? (
-                  <>
-                    <div className="bg-white/70 backdrop-blur rounded-lg p-2 mb-2 text-center text-sm overflow-hidden" dangerouslySetInnerHTML={renderLatex(el.latex.length > 30 ? el.latex.slice(0, 30) + '...' : el.latex, true)} />
-                    <input type="text" value={el.latex} onChange={e => updateElement(el.id, { latex: e.target.value })} placeholder="LaTeX formula" className="w-full px-2 py-1 text-xs bg-white/50 backdrop-blur rounded border border-white/30 mb-2" />
-                    <div className="flex gap-2 mb-2 flex-wrap">
-                      <input type="text" value={el.subject} onChange={e => updateElement(el.id, { subject: e.target.value })} className="px-2 py-0.5 text-xs bg-blue-200/50 backdrop-blur rounded-full flex-1 min-w-0" placeholder="Subject" />
-                      <input type="text" value={el.topic} onChange={e => updateElement(el.id, { topic: e.target.value })} className="px-2 py-0.5 text-xs bg-green-200/50 backdrop-blur rounded-full flex-1 min-w-0" placeholder="Topic" />
-                    </div>
-                  </>
-                ) : el.type === 'image' ? (
-                  <div className="flex-1 mb-2 min-h-0">
-                    <img src={el.url} alt={el.title} className="w-full h-full object-contain rounded" />
-                    <input type="text" value={el.url} onChange={e => updateElement(el.id, { url: e.target.value })} placeholder="Image URL" className="w-full px-2 py-1 text-xs bg-white/50 backdrop-blur rounded border border-white/30 mt-2" />
-                  </div>
-                ) : null}
-                <textarea value={el.notes || ''} onChange={e => updateElement(el.id, { notes: e.target.value })} placeholder="Notes..." className="w-full px-2 py-1 text-xs bg-white/50 backdrop-blur rounded border border-white/30 resize-none" rows={2} />
-                <div className="absolute bottom-0 right-0 w-4 h-4 bg-blue-500 cursor-se-resize rounded-tl-lg opacity-0 hover:opacity-100 transition" onMouseDown={e => { e.stopPropagation(); setResizingId(el.id); setResizeStart({ x: e.clientX, y: e.clientY, width: el.width || 224, height: el.height || 200 }); }} />
-              </div>
+            <div key={el.id} className="group">
+              {renderElement(el)}
             </div>
           ))}
           {elements.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="text-center">
-                <p className="text-xl text-gray-400">Add your first element</p>
-                <p className="text-sm text-gray-400 mt-2">Use the top bar to add formulas or images</p>
+              <div className="text-center p-4 bg-white/80 rounded-xl max-w-md">
+                <p className="text-xl text-gray-600 font-medium">Add your first element</p>
+                <p className="text-gray-500 mt-2">Use the top bar to add formulas, notes, tables or images</p>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Hover Popup */}
-      {hoveredFormula?.type === 'formula' && (
-        <div className="fixed z-50 bg-white  rounded-xl shadow-2xl p-6 border-2 border-red-500 max-w pointer-events-none" style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
+      {hoveredFormula && (
+        <div className="fixed z-50 bg-white rounded-xl shadow-2xl p-6 border-2 border-red-500 max-w-md w-full max-h-[80vh] overflow-auto"
+          style={{
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            maxHeight: '80vh'
+          }}>
           <div className="text-sm font-bold mb-3 text-gray-700">{hoveredFormula.title}</div>
           <div className="text-black overflow-auto" dangerouslySetInnerHTML={renderLatex(hoveredFormula.latex)} />
         </div>
       )}
 
-      {/* Share Modal */}
       {showShareModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full">
@@ -476,7 +817,6 @@ const FormulaWhiteboard = () => {
         </div>
       )}
 
-      {/* API Key Modal */}
       {showKeyModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
@@ -490,7 +830,7 @@ const FormulaWhiteboard = () => {
           </div>
         </div>
       )}
-
+      <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet" />
       <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
     </div>
