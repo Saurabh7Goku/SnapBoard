@@ -1,6 +1,9 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Wand2, Trash2, LogOut, Users, Share2, Copy, Menu, Upload, Settings, Type, Table, SquarePlus } from 'lucide-react';
+import {
+  Plus, Wand2, Trash2, LogOut, Users, Share2, Copy, Menu, Upload, Settings, Type, Table,
+  SquarePlus, Calendar, FolderOpen, X, Lock
+} from 'lucide-react';
 import katex from 'katex';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
@@ -45,6 +48,8 @@ const FormulaWhiteboard = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('myBoards');
   const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newBoardName, setNewBoardName] = useState('');
   const fileInputRef = useRef(null);
   const isInitialLoad = useRef(true);
 
@@ -73,16 +78,16 @@ const FormulaWhiteboard = () => {
 
   useEffect(() => {
     if (!currentBoard || !user) return;
-    
+
     // Reset the initial load flag when board changes
     isInitialLoad.current = true;
-    
+
     const elementsRef = ref(db, `boards/${currentBoard.id}/elements`);
     const elementsUnsub = onValue(elementsRef, (snap) => {
       const data = snap.val();
       const loadedElements = data ? Object.entries(data).map(([id, el]) => ({ id, ...el })) : [];
       setElements(loadedElements);
-      
+
       // Only reset z-indexes on initial load, not on every update
       if (isInitialLoad.current) {
         const resetZIndexMap = {};
@@ -162,16 +167,28 @@ const FormulaWhiteboard = () => {
     });
   };
 
-  const createBoard = async () => {
-    if (!user) return;
-    const name = prompt('Board name:');
-    if (!name) return;
+  const createBoard = () => {
+    setShowCreateModal(true);
+    setNewBoardName('');
+  };
+
+  const handleCreateBoard = async () => {
+    if (!user || !newBoardName.trim()) return;
+
     const boardRef = push(ref(db, 'boards'));
     const boardId = boardRef.key;
-    await set(ref(db, `boards/${boardId}/meta`), { name, owner: user.uid, ownerEmail: user.email, ownerName: user.displayName || user.email, createdAt: serverTimestamp() });
+    await set(ref(db, `boards/${boardId}/meta`), {
+      name: newBoardName.trim(),
+      owner: user.uid,
+      ownerEmail: user.email,
+      ownerName: user.displayName || user.email,
+      createdAt: serverTimestamp()
+    });
     await set(ref(db, `users/${user.uid}/boards/${boardId}`), true);
-    setCurrentBoard({ id: boardId, name, owner: user.uid });
+    setCurrentBoard({ id: boardId, name: newBoardName.trim(), owner: user.uid });
     setShowDashboard(false);
+    setShowCreateModal(false);
+    setNewBoardName('');
   };
 
   const openBoard = (board) => {
@@ -213,7 +230,7 @@ const FormulaWhiteboard = () => {
       color: CARD_COLORS[Math.floor(Math.random() * CARD_COLORS.length)],
       width: 224, height: 200, type: 'formula', createdAt: serverTimestamp()
     });
-    
+
     // Set new card to highest z-index
     const newZ = maxZIndex + 1;
     setZIndexMap(p => ({ ...p, [newId]: newZ }));
@@ -235,7 +252,7 @@ const FormulaWhiteboard = () => {
       type: 'note',
       createdAt: serverTimestamp()
     });
-    
+
     // Set new card to highest z-index
     const newZ = maxZIndex + 1;
     setZIndexMap(p => ({ ...p, [newId]: newZ }));
@@ -260,7 +277,7 @@ const FormulaWhiteboard = () => {
       type: 'table',
       createdAt: serverTimestamp()
     });
-    
+
     // Set new card to highest z-index
     const newZ = maxZIndex + 1;
     setZIndexMap(p => ({ ...p, [newId]: newZ }));
@@ -276,7 +293,7 @@ const FormulaWhiteboard = () => {
       y: Math.random() * (window.innerHeight * 0.3) + 100, color: '#ffffff',
       width: 200, height: 150, type: 'image', createdAt: serverTimestamp()
     });
-    
+
     // Set new card to highest z-index
     const newZ = maxZIndex + 1;
     setZIndexMap(p => ({ ...p, [newId]: newZ }));
@@ -345,7 +362,7 @@ const FormulaWhiteboard = () => {
           color: CARD_COLORS[Math.floor(Math.random() * CARD_COLORS.length)],
           width: 224, height: 200, type: 'formula', createdAt: serverTimestamp()
         });
-        
+
         // Set new card to highest z-index
         const newZ = maxZIndex + 1;
         setZIndexMap(p => ({ ...p, [newId]: newZ }));
@@ -380,17 +397,17 @@ const FormulaWhiteboard = () => {
     // Get all element IDs sorted by their current z-index
     const sortedElements = Object.entries(zIndexMap)
       .sort(([, zA], [, zB]) => zA - zB);
-    
+
     // Reassign z-indexes sequentially (1, 2, 3...)
     const newZIndexMap = {};
     sortedElements.forEach(([id], index) => {
       newZIndexMap[id] = index + 1;
     });
-    
+
     // Put tapped card on top
     const newMaxZ = sortedElements.length + 1;
     newZIndexMap[tappedId] = newMaxZ;
-    
+
     setZIndexMap(newZIndexMap);
     setMaxZIndex(newMaxZ);
   };
@@ -398,7 +415,7 @@ const FormulaWhiteboard = () => {
   const handleDragStart = (e, id) => {
     if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
     setDraggedId(id);
-    
+
     // Check if we need to normalize (threshold: 1000)
     if (maxZIndex >= 1000) {
       normalizeZIndexes(id);
@@ -408,7 +425,7 @@ const FormulaWhiteboard = () => {
       setZIndexMap(p => ({ ...p, [id]: newZ }));
       setMaxZIndex(newZ);
     }
-    
+
     const el = elements.find(f => f.id === id);
     setDragOffset({ x: e.clientX - el.x, y: e.clientY - el.y });
   };
@@ -745,58 +762,254 @@ const FormulaWhiteboard = () => {
     );
   }
 
-
   if (showDashboard && !currentBoard) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-        <div className="bg-white shadow-sm border-b sticky top-0 z-[100]">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Formula Boards</h1>
-            <button onClick={signOutUser} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"><LogOut size={20} /></button>
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <div className="bg-white border-b sticky top-0 z-[100]">
+          <div className="max-w-7xl mx-auto px-6 lg:px-8 flex justify-between items-center h-16">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <FolderOpen size={18} className="text-white" />
+              </div>
+              <h1 className="text-xl font-bold text-gray-900">Formula Boards</h1>
+            </div>
+            <button
+              onClick={signOutUser}
+              className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <LogOut size={18} />
+              <span className="text-sm font-medium hidden sm:inline">Sign Out</span>
+            </button>
           </div>
         </div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex gap-4 mb-6 border-b">
-            <button onClick={() => setActiveTab('myBoards')} className={`px-4 py-2 font-medium transition-all ${activeTab === 'myBoards' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600'}`}>My Boards ({boards.length})</button>
-            <button onClick={() => setActiveTab('shared')} className={`px-4 py-2 font-medium transition-all ${activeTab === 'shared' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-600'}`}>Shared ({sharedBoards.length})</button>
+
+        {/* Main Content */}
+        <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
+          {/* Tabs */}
+          <div className="flex gap-1 mb-8 bg-white p-1 rounded-lg shadow-sm border w-fit">
+            <button
+              onClick={() => setActiveTab('myBoards')}
+              className={`px-6 py-2.5 font-medium rounded-md transition-all ${activeTab === 'myBoards'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
+            >
+              My Boards
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${activeTab === 'myBoards'
+                ? 'bg-blue-500'
+                : 'bg-gray-200 text-gray-600'
+                }`}>
+                {boards.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab('shared')}
+              className={`px-6 py-2.5 font-medium rounded-md transition-all ${activeTab === 'shared'
+                ? 'bg-purple-600 text-white shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
+            >
+              Shared
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${activeTab === 'shared'
+                ? 'bg-purple-500'
+                : 'bg-gray-200 text-gray-600'
+                }`}>
+                {sharedBoards.length}
+              </span>
+            </button>
           </div>
+
+          {/* My Boards Tab */}
           {activeTab === 'myBoards' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              <button onClick={createBoard} className="h-48 border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition flex flex-col items-center justify-center group">
-                <Plus size={40} className="text-gray-400 group-hover:text-blue-500 mb-2" />
-                <span className="text-gray-600 group-hover:text-blue-600 font-medium">New Board</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {/* Create New Board Card */}
+              <button
+                onClick={createBoard}
+                className="h-52 bg-white border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-500 hover:bg-blue-50/50 transition-all flex flex-col items-center justify-center group"
+              >
+                <div className="w-14 h-14 rounded-full bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center mb-3 transition-colors">
+                  <Plus size={24} className="text-gray-400 group-hover:text-blue-600 transition-colors" />
+                </div>
+                <span className="text-gray-600 group-hover:text-blue-600 font-semibold transition-colors">Create New Board</span>
               </button>
+
+              {/* Board Cards */}
               {boards.map(board => (
-                <div key={board.id} onClick={() => openBoard(board)} className="h-48 bg-white rounded-xl shadow-sm hover:shadow-lg transition cursor-pointer p-6 relative group border hover:border-blue-300">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">{board.name}</h3>
-                  <p className="text-sm text-gray-500">{new Date(board.createdAt).toLocaleDateString()}</p>
-                  <button onClick={(e) => deleteBoard(board.id, e)} className="absolute top-4 right-4 p-2 text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
+                <div
+                  key={board.id}
+                  onClick={() => openBoard(board)}
+                  className="h-52 bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer p-5 relative group border border-gray-200 hover:border-blue-400"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <FolderOpen size={20} className="text-blue-600" />
+                    </div>
+                    <button
+                      onClick={(e) => deleteBoard(board.id, e)}
+                      className="p-2 text-gray-400 opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+
+                  <h3 className="text-base font-semibold text-gray-900 mb-2 line-clamp-2">
+                    {board.name}
+                  </h3>
+
+                  <div className="absolute bottom-5 left-5 right-5">
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <Calendar size={14} />
+                      <span>{new Date(board.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
           )}
+
+          {/* Shared Boards Tab */}
           {activeTab === 'shared' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {sharedBoards.length === 0 ? <p className="text-gray-500 col-span-full text-center py-12">No shared boards</p> : sharedBoards.map(board => (
-                <div key={board.id} onClick={() => openBoard(board)} className="h-48 bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl shadow-sm hover:shadow-lg transition cursor-pointer p-6 border border-purple-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">{board.name}</h3>
-                  <p className="text-sm text-gray-600">By {board.ownerName}</p>
-                  <Users size={16} className="text-purple-500 mt-2" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {sharedBoards.length === 0 ? (
+                <div className="col-span-full">
+                  <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                    <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+                      <Users size={28} className="text-gray-400" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No shared boards yet</h3>
+                    <p className="text-gray-500 text-sm">Boards shared with you will appear here</p>
+                  </div>
                 </div>
-              ))}
+              ) : (
+                sharedBoards.map(board => (
+                  <div
+                    key={board.id}
+                    onClick={() => openBoard(board)}
+                    className="h-52 bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer p-5 border border-purple-200 hover:border-purple-400 relative group"
+                  >
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                        <Users size={20} className="text-purple-600" />
+                      </div>
+                      <div className="px-2.5 py-1 bg-purple-100 rounded-full">
+                        <Lock size={12} className="text-purple-600" />
+                      </div>
+                    </div>
+
+                    <h3 className="text-base font-semibold text-gray-900 mb-2 line-clamp-2">
+                      {board.name}
+                    </h3>
+
+                    <div className="absolute bottom-5 left-5 right-5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-purple-200 flex items-center justify-center">
+                          <span className="text-xs font-medium text-purple-700">
+                            {board.ownerName.charAt(0)}
+                          </span>
+                        </div>
+                        <span className="text-sm text-gray-600 font-medium">{board.ownerName}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>
 
+        {/* Create Board Modal */}
+        {showCreateModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full border border-gray-200 relative">
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
+                <FolderOpen size={24} className="text-blue-600" />
+              </div>
+
+              <h2 className="text-2xl font-bold mb-2 text-gray-900">Create New Board</h2>
+              <p className="text-sm text-gray-600 mb-6">
+                Give your board a name to get started
+              </p>
+
+              <input
+                type="text"
+                value={newBoardName}
+                onChange={e => setNewBoardName(e.target.value)}
+                placeholder="e.g., Q4 Budget Planning"
+                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-6 text-gray-900"
+                onKeyPress={e => e.key === 'Enter' && handleCreateBoard()}
+                autoFocus
+              />
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleCreateBoard}
+                  disabled={!newBoardName.trim()}
+                  className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  Create Board
+                </button>
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* First Time Setup Modal */}
         {showFirstTimeSetup && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
-              <h2 className="text-xl font-bold mb-3 text-gray-800">Set Up Gemini API Key</h2>
-              <p className="text-sm text-gray-600 mb-4">Get your key from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener" className="text-blue-500 underline">Google AI Studio</a></p>
-              <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 text-gray-700" onKeyPress={e => e.key === 'Enter' && saveApiKey()} />
-              <div className="flex gap-2">
-                <button onClick={saveApiKey} className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">Save</button>
-                <button onClick={() => setShowFirstTimeSetup(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Skip</button>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full border border-gray-200">
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
+                <Lock size={24} className="text-blue-600" />
+              </div>
+
+              <h2 className="text-2xl font-bold mb-2 text-gray-900">Set Up Gemini API Key</h2>
+              <p className="text-sm text-gray-600 mb-6">
+                Get your API key from{' '}
+                <a
+                  href="https://makersuite.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-700 font-medium underline"
+                >
+                  Google AI Studio
+                </a>
+              </p>
+
+              <input
+                type="password"
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4 text-gray-900 font-mono text-sm"
+                onKeyPress={e => e.key === 'Enter' && saveApiKey()}
+              />
+
+              <div className="flex gap-3">
+                <button
+                  onClick={saveApiKey}
+                  className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+                >
+                  Save API Key
+                </button>
+                <button
+                  onClick={() => setShowFirstTimeSetup(false)}
+                  className="px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Skip
+                </button>
               </div>
             </div>
           </div>
@@ -809,32 +1022,155 @@ const FormulaWhiteboard = () => {
 
   return (
     <div className="w-full h-screen bg-gradient-to-br from-slate-50 to-slate-100 overflow-hidden relative" onMouseMove={handleGlobalMove} onMouseUp={() => { setDraggedId(null); setResizingId(null); }}>
-      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-white/90 backdrop-blur-lg rounded-full shadow-lg px-6 py-3 border border-white/20 flex items-center gap-3 flex-wrap justify-center max-w-fit">
-        <button onClick={() => { setShowDashboard(true); setCurrentBoard(null); }} className="px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-full transition">Dashboard</button>
-        <div className="w-px h-5 bg-gray-300"></div>
-        <button onClick={addFormula} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white text-sm rounded-full hover:bg-blue-600 transition"><Plus size={14} /> Formula</button>
-        <button onClick={addNote} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white text-sm rounded-full hover:bg-emerald-600 transition"><Type size={14} /> Note</button>
-        <button onClick={addTable} className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white text-sm rounded-full hover:bg-amber-600 transition"><Table size={14} /> Table</button>
-        <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500 text-white text-sm rounded-full hover:bg-indigo-600 transition"><Upload size={14} /> Image</button>
-        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-        {currentBoard.owner === user.uid && (
-          <button onClick={() => setShowShareModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500 text-white text-sm rounded-full hover:bg-purple-600 transition"><Share2 size={14} /> Share</button>
-        )}
-        <div className="w-px h-5 bg-gray-300"></div>
+      <div className="fixed top-3 left-1/2 transform -translate-x-1/2 z-50 bg-white/95 backdrop-blur-xl rounded-2xl shadow-lg px-4 py-2 border border-gray-200/50 flex items-center gap-2">
+        {/* Dashboard Button */}
+        <button
+          onClick={() => { setShowDashboard(true); setCurrentBoard(null); }}
+          className="px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          Dashboard
+        </button>
+
+        <div className="w-px h-6 bg-gray-200"></div>
+
+        {/* Action Buttons Group */}
         <div className="flex items-center gap-1">
-          <input type="text" value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleAI()} placeholder="Add Linear formula..." className="px-3 py-1.5 text-sm text-gray-600 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500 w-36" />
-          <button onClick={handleAI} disabled={isProcessing} className="p-1.5 bg-purple-500 text-white rounded-full hover:bg-purple-600 transition disabled:opacity-50"><Wand2 size={14} /></button>
+          <button
+            onClick={addFormula}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-sm"
+            title="Add Formula"
+          >
+            <Plus size={16} strokeWidth={2.5} />
+            <span className="hidden sm:inline">Formula</span>
+          </button>
+
+          <button
+            onClick={addNote}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white text-sm font-medium rounded-lg hover:bg-emerald-600 transition-colors shadow-sm"
+            title="Add Note"
+          >
+            <Type size={16} strokeWidth={2.5} />
+            <span className="hidden sm:inline">Note</span>
+          </button>
+
+          <button
+            onClick={addTable}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 transition-colors shadow-sm"
+            title="Add Table"
+          >
+            <Table size={16} strokeWidth={2.5} />
+            <span className="hidden sm:inline">Table</span>
+          </button>
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500 text-white text-sm font-medium rounded-lg hover:bg-indigo-600 transition-colors shadow-sm"
+            title="Add Image"
+          >
+            <Upload size={16} strokeWidth={2.5} />
+            <span className="hidden sm:inline">Image</span>
+          </button>
+
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+
+          {currentBoard.owner === user.uid && (
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500 text-white text-sm font-medium rounded-lg hover:bg-purple-600 transition-colors shadow-sm"
+              title="Share Board"
+            >
+              <Share2 size={16} strokeWidth={2.5} />
+              <span className="hidden sm:inline">Share</span>
+            </button>
+          )}
         </div>
-        <div className="w-px h-5 bg-gray-300"></div>
+
+        <div className="w-px h-6 bg-gray-200"></div>
+
+        {/* AI Input Group */}
+        <div className="flex items-center gap-1.5 bg-gradient-to-r from-purple-50 to-pink-50 px-3 py-1.5 rounded-lg border border-purple-200/50">
+          <Wand2 size={16} className="text-purple-600" strokeWidth={2.5} />
+          <input
+            type="text"
+            value={aiPrompt}
+            onChange={e => setAiPrompt(e.target.value)}
+            onKeyPress={e => e.key === 'Enter' && handleAI()}
+            placeholder="Ask AI..."
+            className="bg-transparent text-sm text-gray-700 placeholder:text-purple-400/60 focus:outline-none w-32 lg:w-40"
+          />
+          <button
+            onClick={handleAI}
+            disabled={isProcessing}
+            className="p-1 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            title="Generate with AI"
+          >
+            <Wand2 size={14} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        <div className="w-px h-6 bg-gray-200"></div>
+
+        {/* Menu Button */}
         <div className="relative">
-          <button onClick={() => setMenuOpen(!menuOpen)} className="p-1.5 hover:bg-gray-600 bg-slate-400 rounded-full transition"><Menu size={18} /></button>
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            title="More Options"
+          >
+            <Menu size={18} strokeWidth={2.5} className="text-gray-600" />
+          </button>
+
           {menuOpen && (
-            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden">
-              {!apiKey && (<button onClick={() => { setShowKeyModal(true); setMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 border-b"><Settings size={14} /> Set API Key</button>)}
-              {apiKey && (<button onClick={() => { setShowKeyModal(true); setMenuOpen(false); }} className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 border-b"><Settings size={14} /> Change API Key</button>)}
-              {collaborators.length > 0 && (<div className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-50 border-b">Collaborators: {collaborators.map(c => c.email).join(', ')}</div>)}
-              <button onClick={clearBoard} className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 border-b"><Trash2 size={14} /> Clear Board</button>
-              <button onClick={signOutUser} className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"><LogOut size={14} /> Logout</button>
+            <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+              {!apiKey && (
+                <button
+                  onClick={() => { setShowKeyModal(true); setMenuOpen(false); }}
+                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                >
+                  <Settings size={16} />
+                  <span>Set API Key</span>
+                </button>
+              )}
+
+              {apiKey && (
+                <button
+                  onClick={() => { setShowKeyModal(true); setMenuOpen(false); }}
+                  className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+                >
+                  <Settings size={16} />
+                  <span>Change API Key</span>
+                </button>
+              )}
+
+              {collaborators.length > 0 && (
+                <div className="px-4 py-2.5 text-xs text-gray-500 bg-gray-50 border-b border-gray-100">
+                  <div className="font-semibold text-gray-700 mb-1 flex items-center gap-2">
+                    <Users size={14} />
+                    Collaborators
+                  </div>
+                  <div className="space-y-1">
+                    {collaborators.map((c, i) => (
+                      <div key={i} className="text-gray-600">{c.email}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={clearBoard}
+                className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-3 border-b border-gray-100 transition-colors"
+              >
+                <Trash2 size={16} />
+                <span>Clear Board</span>
+              </button>
+
+              <button
+                onClick={signOutUser}
+                className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+              >
+                <LogOut size={16} />
+                <span>Logout</span>
+              </button>
             </div>
           )}
         </div>
