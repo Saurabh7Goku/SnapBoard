@@ -262,7 +262,7 @@ export const BoardCanvas = ({ elements, currentBoard, user }) => {
                 <div className="fixed z-100 bg-white rounded-xl shadow-2xl p-6 border-2 border-red-500 max-w-md w-full max-h-[80vh] overflow-auto"
                     style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)', maxHeight: '80vh' }}>
                     <div className="text-sm font-bold mb-3 text-gray-700">{hoveredFormula.title}</div>
-                    <div className="text-black overflow-auto" dangerouslySetInnerHTML={renderLatex(hoveredFormula.latex)} />
+                    <div className="text-black overflow-auto" dangerouslySetInnerHTML={{ __html: renderLatex(hoveredFormula.latex) }} />
                 </div>
             )}
         </div>

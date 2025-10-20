@@ -834,11 +834,11 @@ SECTION 4: COMMON MISTAKES AND TIPS
         {showCreateModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-              <h2 className="text-2xl font-bold mb-4">Create New Board</h2>
-              <input type="text" value={newBoardName} onChange={e => setNewBoardName(e.target.value)} placeholder="Board name" className="w-full px-4 py-3 rounded-lg border focus:ring-2 focus:ring-blue-500 mb-4" onKeyPress={e => e.key === 'Enter' && handleCreateBoard()} autoFocus />
+              <h2 className="text-2xl text-gray-700 font-bold mb-4">Create New Board</h2>
+              <input type="text" value={newBoardName} onChange={e => setNewBoardName(e.target.value)} placeholder="Board name" className="w-full px-4 py-3 rounded-lg border focus:ring-2 focus:ring-blue-500 mb-4 text-gray-500" onKeyPress={e => e.key === 'Enter' && handleCreateBoard()} autoFocus />
               <div className="flex gap-2">
                 <button onClick={handleCreateBoard} disabled={!newBoardName.trim()} className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300">Create</button>
-                <button onClick={() => setShowCreateModal(false)} className="px-4 py-3 border rounded-lg hover:bg-gray-50">Cancel</button>
+                <button onClick={() => setShowCreateModal(false)} className="px-4 py-3 border rounded-lg bg-red-300 hover:bg-red-600">Cancel</button>
               </div>
             </div>
           </div>
@@ -946,13 +946,13 @@ SECTION 4: COMMON MISTAKES AND TIPS
       {showShareModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full">
-            <h2 className="text-xl font-bold mb-4">Share Board</h2>
-            <input type="email" value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="colleague@example.com" className="w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-purple-500 mb-4" onKeyPress={e => e.key === 'Enter' && shareBoard()} />
+            <h2 className="text-xl font-bold text-black mb-4">Share Board</h2>
+            <input type="email" value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="colleague@example.com" className="w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-purple-500 mb-4 text-gray-500" onKeyPress={e => e.key === 'Enter' && shareBoard()} />
             <div className="flex gap-2 mb-4">
               <button onClick={shareBoard} className="flex-1 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600">Send Invite</button>
-              <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}?board=${currentBoard.id}`); alert('Link copied!'); }} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 flex items-center gap-2"><Copy size={16} /> Link</button>
+              <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}?board=${currentBoard.id}`); alert('Link copied!'); }} className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-300 flex items-center gap-2"><Copy size={16} /> Link</button>
             </div>
-            <button onClick={() => setShowShareModal(false)} className="w-full px-4 py-2 border rounded-lg hover:bg-gray-50">Close</button>
+            <button onClick={() => setShowShareModal(false)} className="w-full text-black px-4 py-2 border rounded-lg hover:bg-gray-50">Close</button>
           </div>
         </div>
       )}
