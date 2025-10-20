@@ -181,7 +181,7 @@ export const BoardCanvas = ({ elements, currentBoard, user }) => {
 
                 {el.type === 'formula' ? (
                     <div className="h-[calc(100%-60px)] flex flex-col">
-                        <div className="bg-white/70 backdrop-blur rounded-lg p-2 mb-2 text-center text-sm overflow-hidden flex-grow text-black" style={{ minHeight: '40px', flex: '0 0 auto' }} dangerouslySetInnerHTML={renderLatex(el.latex, true)} />
+                        <div className="bg-white/70 backdrop-blur rounded-lg p-2 mb-2 text-center text-sm overflow-hidden flex-grow text-black" style={{ minHeight: '40px', flex: '0 0 auto' }} dangerouslySetInnerHTML={{ __html: renderLatex(el.latex, true) }} />
                         <input type="text" value={el.latex} onChange={e => updateElement(el.id, { latex: e.target.value })} placeholder="LaTeX formula" className="w-full px-2 py-1 text-xs bg-white/50 backdrop-blur rounded border border-white/30 mb-2" />
                         <div className="flex gap-2 mb-2 flex-wrap">
                             <input type="text" value={el.subject} onChange={e => updateElement(el.id, { subject: e.target.value })} className="px-2 py-0.5 text-xs bg-blue-200/50 backdrop-blur rounded-full flex-1 min-w-0" placeholder="Subject" />
