@@ -311,7 +311,7 @@ SECTION 4: COMMON MISTAKES AND TIPS
 
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?key=${apiKey}&alt=sse`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -335,26 +335,44 @@ SECTION 4: COMMON MISTAKES AND TIPS
 
       if (!res.ok) throw new Error(`API Error: ${res.status}`);
 
-      const data = await res.json();
-      const fullResponse = data.candidates[0].content.parts[0].text;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = '';
+      const currentQuery = qaQuery;
 
-      // Streaming effect
-      let currentIndex = 0;
-      const streamInterval = setInterval(() => {
-        if (currentIndex < fullResponse.length) {
-          setQaResponse(fullResponse.slice(0, currentIndex + 1));
-          currentIndex++;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-          if (responseRef.current) {
-            responseRef.current.scrollTop = responseRef.current.scrollHeight;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const jsonStr = line.slice(6);
+              if (jsonStr.trim() === '[DONE]') continue;
+
+              const data = JSON.parse(jsonStr);
+              const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+              if (text) {
+                fullResponse += text;
+                setQaResponse(fullResponse);
+
+                if (responseRef.current) {
+                  responseRef.current.scrollTop = responseRef.current.scrollHeight;
+                }
+              }
+            } catch (e) {
+              // Skip invalid JSON lines
+            }
           }
-        } else {
-          clearInterval(streamInterval);
-          setQaLoading(false);
         }
-      }, 2);
+      }
 
-      saveQaHistory({ query: qaQuery, response: fullResponse, timestamp: Date.now() });
+      setQaLoading(false);
+      saveQaHistory({ query: currentQuery, response: fullResponse, timestamp: Date.now() });
       setQaQuery('');
     } catch (err) {
       setQaResponse(`Error: ${err.message}`);
@@ -387,22 +405,20 @@ SECTION 4: COMMON MISTAKES AND TIPS
     );
   }
 
-  // Replace the entire "if (showQABoard)" section with this code:
-
   if (showQABoard) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <div className="border-b border-blue-200 sticky top-0 z-40 bg-white/80 backdrop-blur-md">
+        <div className="border-b border-gray-200 sticky top-0 z-40 bg-white shadow-sm">
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-md">
+                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
                   <MessageSquare size={20} className="text-white" />
                 </div>
                 <div>
                   <h1 className="text-lg font-bold text-gray-900">GATE DA Helper</h1>
-                  <p className="text-xs text-indigo-600">Exam preparation</p>
+                  <p className="text-xs text-blue-600">Exam preparation assistant</p>
                 </div>
               </div>
               <button
@@ -419,8 +435,8 @@ SECTION 4: COMMON MISTAKES AND TIPS
                   type="text"
                   value={qaQuery}
                   onChange={e => setQaQuery(e.target.value)}
-                  placeholder="Search GATE DA topics..."
-                  className="w-full px-4 py-2.5 text-sm bg-white border border-blue-200 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-gray-900 placeholder-gray-400 transition-all"
+                  placeholder="Enter a GATE DA topic (e.g., Probability, Linear Regression)..."
+                  className="w-full px-4 py-2.5 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-900 placeholder-gray-400 transition-all"
                   onKeyPress={e => e.key === 'Enter' && handleGateDA()}
                   disabled={qaLoading}
                 />
@@ -428,7 +444,7 @@ SECTION 4: COMMON MISTAKES AND TIPS
               <button
                 onClick={handleGateDA}
                 disabled={qaLoading || !qaQuery.trim()}
-                className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-lg hover:shadow-lg hover:shadow-blue-500/30 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all"
+                className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 hover:shadow-md disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
               >
                 {qaLoading ? 'Generating...' : 'Generate'}
               </button>
@@ -443,32 +459,190 @@ SECTION 4: COMMON MISTAKES AND TIPS
             <div className="lg:col-span-3">
               {qaResponse ? (
                 <div className="animate-fadeIn">
-                  <div className="flex items-center gap-2 mb-4 pb-4 border-b border-indigo-200">
+                  <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
                     <div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>
-                    <h2 className="text-sm font-semibold text-gray-900">Response</h2>
+                    <h2 className="text-sm font-semibold text-gray-900">Generated Response</h2>
                   </div>
                   <div
                     ref={responseRef}
-                    className="text-sm text-gray-800 leading-relaxed font-mono whitespace-pre-wrap break-words"
+                    className="text-sm text-gray-900 leading-7 whitespace-pre-wrap break-words"
+                    style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
                   >
-                    {qaResponse}
-                    {qaLoading && <span className="animate-pulse text-indigo-600">▊</span>}
+                    {qaResponse.split('\n').map((line, idx) => {
+                      const trimmedLine = line.trim();
+
+                      // Main Section headers (SECTION 1:, SECTION 2:, etc.) - without ---
+                      if (/^SECTION \d+:/.test(trimmedLine)) {
+                        const sectionNumber = trimmedLine.match(/SECTION (\d+)/)?.[1] || '';
+                        const sectionTitle = trimmedLine.replace(/SECTION \d+:\s*/, '');
+
+                        return (
+                          <div key={idx} className="mt-10 mb-6 first:mt-0">
+                            <div className="flex items-center gap-3 mb-3">
+                              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-600 text-white font-bold text-lg">
+                                {sectionNumber}
+                              </div>
+                              <h2 className="text-2xl font-extrabold text-gray-900 uppercase tracking-wide">
+                                {sectionTitle}
+                              </h2>
+                            </div>
+                            <div className="h-1 bg-gradient-to-r from-blue-600 via-blue-400 to-transparent rounded-full"></div>
+                          </div>
+                        );
+                      }
+
+                      // Section headers with --- prefix (---SECTION...)
+                      if (trimmedLine.startsWith('---') && trimmedLine.includes('SECTION')) {
+                        const sectionText = trimmedLine.replace(/---/g, '').trim();
+                        const sectionNumber = sectionText.match(/SECTION (\d+)/)?.[1] || '';
+                        const sectionTitle = sectionText.replace(/SECTION \d+:\s*/, '');
+
+                        return (
+                          <div key={idx} className="mt-10 mb-6 first:mt-0">
+                            <div className="flex items-center gap-3 mb-3">
+                              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-600 text-white font-bold text-lg">
+                                {sectionNumber}
+                              </div>
+                              <h2 className="text-2xl font-extrabold text-gray-900 uppercase tracking-wide">
+                                {sectionTitle}
+                              </h2>
+                            </div>
+                            <div className="h-1 bg-gradient-to-r from-blue-600 via-blue-400 to-transparent rounded-full"></div>
+                          </div>
+                        );
+                      }
+
+                      // Regular --- dividers
+                      if (trimmedLine === '---') {
+                        return <div key={idx} className="my-8 border-t-2 border-gray-200"></div>;
+                      }
+
+                      // Problem headers - handle both formats
+                      if (/^(Problem \d+:|^\d+$)/.test(trimmedLine)) {
+                        // Check if it's just a number (like "1" or "2")
+                        if (/^\d+$/.test(trimmedLine)) {
+                          return <div key={idx} className="h-2"></div>; // Skip standalone numbers
+                        }
+
+                        const problemMatch = trimmedLine.match(/Problem (\d+):(.*)/);
+                        const problemNum = problemMatch?.[1] || trimmedLine.match(/\d+/)?.[0] || '';
+                        const problemText = problemMatch?.[2]?.trim() || '';
+
+                        return (
+                          <div key={idx} className="mt-8 mb-4">
+                            <div className="bg-purple-50 border-l-4 border-purple-600 rounded-r-lg p-4 shadow-sm">
+                              <div className="flex items-start gap-3">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 text-white font-bold text-base flex items-center justify-center">
+                                  {problemNum}
+                                </div>
+                                <div className="flex-1">
+                                  <h3 className="text-lg font-bold text-purple-900 mb-2">Problem {problemNum}</h3>
+                                  {problemText && <p className="text-gray-800 leading-relaxed">{problemText}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Solution: label
+                      if (trimmedLine === 'Solution' || trimmedLine.startsWith('Solution:')) {
+                        return (
+                          <div key={idx} className="mt-4 mb-3">
+                            <div className="inline-flex items-center gap-2 bg-green-100 border border-green-300 px-4 py-2 rounded-lg">
+                              <div className="w-2.5 h-2.5 bg-green-600 rounded-full"></div>
+                              <span className="font-bold text-green-800 text-base uppercase tracking-wide">Solution</span>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Answer: label or Final Answer:
+                      if (trimmedLine.startsWith('Answer:') || trimmedLine.startsWith('Final Answer:')) {
+                        const answerText = trimmedLine.replace(/^(Final )?Answer:\s*/, '').trim();
+                        return (
+                          <div key={idx} className="mt-4 mb-4">
+                            <div className="bg-green-50 border-l-4 border-green-600 rounded-r-lg p-4 shadow-sm">
+                              <div className="flex items-start gap-2">
+                                <span className="font-bold text-green-800 text-base uppercase tracking-wide flex-shrink-0">Final Answer:</span>
+                                <span className="text-gray-900 font-semibold">{answerText}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Numbered lists (1., 2., etc. or just numbers followed by text) - Enhanced styling
+                      if (/^\d+\.?\s/.test(trimmedLine) || /^\d+$/.test(trimmedLine)) {
+                        // Skip if it's just a standalone number (already handled above)
+                        if (/^\d+$/.test(trimmedLine)) {
+                          return <div key={idx} className="h-2"></div>;
+                        }
+
+                        const number = trimmedLine.match(/^(\d+)/)?.[1];
+                        const content = trimmedLine.replace(/^\d+\.?\s*/, '');
+
+                        return (
+                          <div key={idx} className="flex gap-3 my-3 pl-4">
+                            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center mt-0.5">
+                              {number}
+                            </div>
+                            <p className="flex-1 text-gray-800 leading-relaxed">{content}</p>
+                          </div>
+                        );
+                      }
+
+                      // Subsection headers (text ending with :)
+                      if (trimmedLine.endsWith(':') && trimmedLine.length < 80 && !trimmedLine.startsWith('Problem') && !trimmedLine.startsWith('Solution') && !trimmedLine.startsWith('Answer')) {
+                        return (
+                          <div key={idx} className="mt-5 mb-3">
+                            <h4 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                              <div className="w-1 h-5 bg-blue-500 rounded"></div>
+                              {trimmedLine}
+                            </h4>
+                          </div>
+                        );
+                      }
+
+                      // Regular paragraphs with better spacing
+                      if (trimmedLine) {
+                        // Check if it's a formula or definition line (contains =, ≈, etc.)
+                        if (/[=≈≠<>±∑∏∫]/.test(trimmedLine)) {
+                          return (
+                            <div key={idx} className="my-3 pl-6 border-l-3 border-blue-300 bg-blue-50 py-2.5 px-3 rounded-r">
+                              <p className="text-gray-900 font-mono text-sm leading-relaxed">{line}</p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <p key={idx} className="my-3 text-gray-800 leading-relaxed">
+                            {line}
+                          </p>
+                        );
+                      }
+
+                      // Empty lines - reduced height
+                      return <div key={idx} className="h-1"></div>;
+                    })}
+                    {qaLoading && <span className="animate-pulse text-blue-600 ml-1 font-bold">▊</span>}
                   </div>
                 </div>
               ) : qaLoading ? (
                 <div className="flex items-center justify-center h-80">
                   <div className="text-center">
-                    <div className="w-10 h-10 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-sm text-gray-600">Generating comprehensive response...</p>
+                    <div className="w-12 h-12 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-sm text-gray-600 font-medium">Generating comprehensive response...</p>
+                    <p className="text-xs text-gray-500 mt-1">This may take a few moments</p>
                   </div>
                 </div>
               ) : (
-                <div className="text-center py-16">
-                  <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <MessageSquare size={32} className="text-indigo-600" />
+                <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
+                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <MessageSquare size={32} className="text-blue-600" />
                   </div>
-                  <p className="text-sm text-gray-700">Enter a topic to begin</p>
-                  <p className="text-xs text-gray-500 mt-2">Get detailed explanations with formulas and practice problems</p>
+                  <p className="text-base font-semibold text-gray-900">Ready to help with GATE DA preparation</p>
+                  <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">Enter a topic above to get detailed explanations, formulas, and solved problems</p>
                 </div>
               )}
             </div>
@@ -476,8 +650,11 @@ SECTION 4: COMMON MISTAKES AND TIPS
             {/* Sidebar */}
             <div className="space-y-5">
               {/* Quick Topics */}
-              <div className="bg-white rounded-xl p-4 border border-blue-200 shadow-sm">
-                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-3">Quick Topics</h3>
+              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <div className="w-1 h-4 bg-blue-600 rounded"></div>
+                  Quick Topics
+                </h3>
                 <div className="space-y-2">
                   {['Probability', 'Regression', 'Hypothesis Testing', 'Bayes Theorem'].map((topic) => (
                     <button
@@ -486,7 +663,7 @@ SECTION 4: COMMON MISTAKES AND TIPS
                         setQaQuery(topic);
                         setTimeout(handleGateDA, 0);
                       }}
-                      className="w-full text-left px-3 py-2 text-xs bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 text-gray-900 rounded-lg border border-blue-200 hover:border-indigo-400 transition-all font-medium"
+                      className="w-full text-left px-3 py-2.5 text-xs bg-blue-50 hover:bg-blue-100 text-gray-900 rounded-lg border border-blue-200 hover:border-blue-400 transition-all font-medium"
                     >
                       {topic}
                     </button>
@@ -495,13 +672,16 @@ SECTION 4: COMMON MISTAKES AND TIPS
               </div>
 
               {/* History */}
-              <div className="bg-white rounded-xl p-4 border border-blue-200 shadow-sm">
+              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Recent</h3>
+                  <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+                    <div className="w-1 h-4 bg-purple-600 rounded"></div>
+                    Recent Queries
+                  </h3>
                   {qaHistory.length > 0 && (
                     <button
                       onClick={() => { if (confirm('Clear all history?')) clearQaHistory(); }}
-                      className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1 transition-colors"
+                      className="text-xs text-red-600 hover:text-red-700 flex items-center gap-1 transition-colors font-medium"
                     >
                       <Trash2 size={12} />
                       Clear
@@ -510,7 +690,10 @@ SECTION 4: COMMON MISTAKES AND TIPS
                 </div>
                 <div className="space-y-2 max-h-[55vh] overflow-y-auto">
                   {qaHistory.length === 0 ? (
-                    <p className="text-xs text-gray-500 text-center py-3">No history</p>
+                    <div className="text-center py-6 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-xs text-gray-500">No history yet</p>
+                      <p className="text-xs text-gray-400 mt-1">Your queries will appear here</p>
+                    </div>
                   ) : (
                     qaHistory
                       .slice()
@@ -520,12 +703,12 @@ SECTION 4: COMMON MISTAKES AND TIPS
                         return (
                           <div
                             key={actualIndex}
-                            className="p-2.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg hover:border-indigo-400 hover:bg-gradient-to-r hover:from-indigo-100 hover:to-purple-100 cursor-pointer group transition-all"
+                            className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 cursor-pointer group transition-all"
                             onClick={() => setQaResponse(item.response)}
                           >
-                            <p className="text-xs font-medium text-gray-900 line-clamp-2 group-hover:text-indigo-700 transition-colors">{item.query}</p>
+                            <p className="text-xs font-medium text-gray-900 line-clamp-2 group-hover:text-purple-700 transition-colors">{item.query}</p>
                             <div className="flex items-center justify-between mt-1.5">
-                              <span className="text-xs text-gray-600">
+                              <span className="text-xs text-gray-500">
                                 {new Date(item.timestamp).toLocaleDateString()}
                               </span>
                               <button
@@ -533,7 +716,7 @@ SECTION 4: COMMON MISTAKES AND TIPS
                                   e.stopPropagation();
                                   deleteQaItem(actualIndex);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"
+                                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-600 transition-all"
                               >
                                 <X size={12} />
                               </button>
