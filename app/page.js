@@ -6,6 +6,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getDatabase, ref, push, set, update, remove, onValue, serverTimestamp, get } from 'firebase/database';
 import { BoardCanvas } from './dashboard/BoardCanvas';
+import { QAResponseEnhanced } from './dashboard/flashcards';
 
 const app = initializeApp({
   apiKey: process.env.NEXT_PUBLIC_API_KEY,
@@ -205,7 +206,7 @@ const FormulaWhiteboard = () => {
     };
 
     const typeProps = {
-      formula: { title: 'New Formula', latex: 'E = mc^2', subject: 'Physics', topic: 'Relativity', notes: '' },
+      formula: { title: 'New Formula', latex: '$E = mc^2$', subject: 'Physics', topic: 'Relativity', notes: '' },
       note: { title: 'Note', content: 'Your note here...' },
       table: { title: 'Table', columns: ['Col 1', 'Col 2'], rows: [{ id: 'row1', cells: ['Cell 1', 'Cell 2'] }] }
     };
@@ -270,6 +271,9 @@ const FormulaWhiteboard = () => {
       if (!apiKey) alert('Set API key first!');
       return;
     }
+
+    const currentTopicToUse = qaQuery;
+
     setQaLoading(true);
     setQaResponse('');
 
@@ -320,14 +324,13 @@ SECTION 4: COMMON MISTAKES AND TIPS
               {
                 parts: [
                   {
-                    text: `${systemPrompt}\n\nUser Topic: "${qaQuery}"\n\nProvide detailed, exam-focused content on this topic.`,
+                    text: `${systemPrompt}\n\nUser Topic: "${currentTopicToUse}"\n\nProvide detailed, exam-focused content on this topic.`,
                   },
                 ],
               },
             ],
             generationConfig: {
               temperature: 0.7,
-              maxOutputTokens: 5000,
             },
           }),
         }
@@ -338,7 +341,6 @@ SECTION 4: COMMON MISTAKES AND TIPS
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let fullResponse = '';
-      const currentQuery = qaQuery;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -372,10 +374,101 @@ SECTION 4: COMMON MISTAKES AND TIPS
       }
 
       setQaLoading(false);
-      saveQaHistory({ query: currentQuery, response: fullResponse, timestamp: Date.now() });
+      saveQaHistory({ query: currentTopicToUse, response: fullResponse, timestamp: Date.now() });
       setQaQuery('');
     } catch (err) {
       setQaResponse(`Error: ${err.message}`);
+      setQaLoading(false);
+    }
+  };
+
+  const handleGenerateMore = async () => {
+    if (!apiKey || !qaQuery.trim()) {
+      alert('Set API key first!');
+      return;
+    }
+
+    setQaLoading(true);
+    const currentTopicToUse = qaQuery;
+
+    const systemPrompt = `You are an expert GATE Data Science and AI (DA) instructor.
+    SOLVED GATE DA LEVEL PROBLEMS
+    Problem 1: [Problem statement]
+    Solution: [Step-by-step solution with clear numbered steps]
+    Answer: [Final answer]
+
+    Problem 2: [Problem statement]
+    Solution: [Step-by-step solution with clear numbered steps]
+    Answer: [Final answer]
+
+    Problem 3: [Problem statement]
+    Solution: [Step-by-step solution with clear numbered steps]
+    Answer: [Final answer]`;
+
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?key=${apiKey}&alt=sse`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `${systemPrompt}\n\nUser Topic: "${currentTopicToUse}"\n\nProvide DIFFERENT and detailed, exam-focused content on this topic from a different angle or with different examples.`,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.8,
+            },
+          }),
+        }
+      );
+
+      if (!res.ok) throw new Error(`API Error: ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let moreContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const jsonStr = line.slice(6);
+              if (jsonStr.trim() === '[DONE]') continue;
+
+              const data = JSON.parse(jsonStr);
+              const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+              if (text) {
+                moreContent += text;
+                // Append to existing response
+                setQaResponse(prev => prev + '\n\n---\n\n' + moreContent);
+
+                if (responseRef.current) {
+                  responseRef.current.scrollTop = responseRef.current.scrollHeight;
+                }
+              }
+            } catch (e) {
+              // Skip invalid JSON
+            }
+          }
+        }
+      }
+
+      setQaLoading(false);
+    } catch (err) {
+      setQaResponse(prev => prev + `\n\nError: ${err.message}`);
       setQaLoading(false);
     }
   };
@@ -459,7 +552,16 @@ SECTION 4: COMMON MISTAKES AND TIPS
             <div className="lg:col-span-3">
               {qaResponse ? (
                 <div className="animate-fadeIn">
-                  <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+                  <QAResponseEnhanced
+                    qaResponse={qaResponse}
+                    qaLoading={qaLoading}
+                    onGenerateMore={handleGenerateMore}
+                    apiKey={apiKey}
+                    currentTopic={qaQuery}
+                  />
+
+                  {/* Original detailed response display for reference */}
+                  <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200 mt-6">
                     <div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>
                     <h2 className="text-sm font-semibold text-gray-900">Generated Response</h2>
                   </div>
@@ -491,7 +593,7 @@ SECTION 4: COMMON MISTAKES AND TIPS
                         );
                       }
 
-                      // Section headers with --- prefix (---SECTION...)
+                      // Section headers with --- prefix
                       if (trimmedLine.startsWith('---') && trimmedLine.includes('SECTION')) {
                         const sectionText = trimmedLine.replace(/---/g, '').trim();
                         const sectionNumber = sectionText.match(/SECTION (\d+)/)?.[1] || '';
@@ -517,11 +619,10 @@ SECTION 4: COMMON MISTAKES AND TIPS
                         return <div key={idx} className="my-8 border-t-2 border-gray-200"></div>;
                       }
 
-                      // Problem headers - handle both formats
+                      // Problem headers
                       if (/^(Problem \d+:|^\d+$)/.test(trimmedLine)) {
-                        // Check if it's just a number (like "1" or "2")
                         if (/^\d+$/.test(trimmedLine)) {
-                          return <div key={idx} className="h-2"></div>; // Skip standalone numbers
+                          return <div key={idx} className="h-2"></div>;
                         }
 
                         const problemMatch = trimmedLine.match(/Problem (\d+):(.*)/);
@@ -557,7 +658,7 @@ SECTION 4: COMMON MISTAKES AND TIPS
                         );
                       }
 
-                      // Answer: label or Final Answer:
+                      // Answer: label
                       if (trimmedLine.startsWith('Answer:') || trimmedLine.startsWith('Final Answer:')) {
                         const answerText = trimmedLine.replace(/^(Final )?Answer:\s*/, '').trim();
                         return (
@@ -572,9 +673,8 @@ SECTION 4: COMMON MISTAKES AND TIPS
                         );
                       }
 
-                      // Numbered lists (1., 2., etc. or just numbers followed by text) - Enhanced styling
+                      // Numbered lists
                       if (/^\d+\.?\s/.test(trimmedLine) || /^\d+$/.test(trimmedLine)) {
-                        // Skip if it's just a standalone number (already handled above)
                         if (/^\d+$/.test(trimmedLine)) {
                           return <div key={idx} className="h-2"></div>;
                         }
@@ -592,7 +692,7 @@ SECTION 4: COMMON MISTAKES AND TIPS
                         );
                       }
 
-                      // Subsection headers (text ending with :)
+                      // Subsection headers
                       if (trimmedLine.endsWith(':') && trimmedLine.length < 80 && !trimmedLine.startsWith('Problem') && !trimmedLine.startsWith('Solution') && !trimmedLine.startsWith('Answer')) {
                         return (
                           <div key={idx} className="mt-5 mb-3">
@@ -604,9 +704,8 @@ SECTION 4: COMMON MISTAKES AND TIPS
                         );
                       }
 
-                      // Regular paragraphs with better spacing
+                      // Regular paragraphs
                       if (trimmedLine) {
-                        // Check if it's a formula or definition line (contains =, ≈, etc.)
                         if (/[=≈≠<>±∑∏∫]/.test(trimmedLine)) {
                           return (
                             <div key={idx} className="my-3 pl-6 border-l-3 border-blue-300 bg-blue-50 py-2.5 px-3 rounded-r">
@@ -622,7 +721,6 @@ SECTION 4: COMMON MISTAKES AND TIPS
                         );
                       }
 
-                      // Empty lines - reduced height
                       return <div key={idx} className="h-1"></div>;
                     })}
                     {qaLoading && <span className="animate-pulse text-blue-600 ml-1 font-bold">▊</span>}
@@ -847,9 +945,9 @@ SECTION 4: COMMON MISTAKES AND TIPS
         {showFirstTimeSetup && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-              <h2 className="text-2xl font-bold mb-4">Set Up Gemini API Key</h2>
+              <h2 className="text-2xl text-gray-700 font-bold mb-4">Set Up Gemini API Key</h2>
               <p className="text-sm text-gray-600 mb-4">Get your API key from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener" className="text-blue-500 underline">Google AI Studio</a></p>
-              <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-4 py-3 rounded-lg border focus:ring-2 focus:ring-blue-500 mb-4" onKeyPress={e => e.key === 'Enter' && saveApiKey()} />
+              <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-4 py-3 text-gray-400 rounded-lg border focus:ring-2 focus:ring-blue-500 mb-4" onKeyPress={e => e.key === 'Enter' && saveApiKey()} />
               <div className="flex gap-2">
                 <button onClick={saveApiKey} className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
                 <button onClick={() => setShowFirstTimeSetup(false)} className="px-4 py-3 border rounded-lg hover:bg-gray-50">Skip</button>
@@ -960,12 +1058,12 @@ SECTION 4: COMMON MISTAKES AND TIPS
       {showKeyModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
-            <h2 className="text-xl font-bold mb-3">Gemini API Key</h2>
+            <h2 className="text-xl text-gray-700 font-bold mb-3">Gemini API Key</h2>
             <p className="text-xs text-gray-600 mb-4">Get your key from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener" className="text-blue-500 underline">Google AI Studio</a></p>
             <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 mb-4" onKeyPress={e => e.key === 'Enter' && saveApiKey()} />
             <div className="flex gap-2">
               <button onClick={saveApiKey} className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">Save</button>
-              <button onClick={() => setShowKeyModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={() => setShowKeyModal(false)} className="px-4 py-2 text-white border rounded-lg bg-red-500 hover:bg-red-800">Cancel</button>
             </div>
           </div>
         </div>
