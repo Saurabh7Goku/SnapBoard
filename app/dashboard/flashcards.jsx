@@ -52,7 +52,7 @@ CRITICAL: Respond ONLY with valid JSON in this EXACT format (no markdown, no ext
 Make questions progressively challenging. correctAnswer is the index (0-3) of the correct option.`;
 
                 const res = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -210,6 +210,17 @@ Keep explanations clear, friendly, and easy to understand. Use plain English, av
 
     return (
         <div>
+            {/* Loading Modal Popup */}
+            {loadingFlashcards && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
+                        <div className="w-16 h-16 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mx-auto mb-6"></div>
+                        <h3 className="text-xl font-bold text-gray-900 mb-2">Generating Flashcards</h3>
+                        <p className="text-gray-600">Creating practice questions for you...</p>
+                    </div>
+                </div>
+            )}
+
             {/* Action Buttons - Only show when response is complete */}
             {qaResponse && !qaLoading && !showFlashcards && (
                 <div className="flex gap-3 mb-6 pb-6 border-b border-gray-200 flex-wrap">
@@ -231,20 +242,16 @@ Keep explanations clear, friendly, and easy to understand. Use plain English, av
                 </div>
             )}
 
-            {/* Flashcards Interface */}
-            {showFlashcards && (
-                <div className="mb-6">
-                    {loadingFlashcards ? (
-                        <div className="bg-white rounded-xl border-2 border-purple-200 p-8 text-center">
-                            <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mx-auto mb-4"></div>
-                            <p className="text-gray-700 font-medium">Generating flashcards...</p>
-                        </div>
-                    ) : showResults ? (
-                        <div className="bg-white rounded-xl border-2 border-purple-200 p-6">
-                            <div className="text-center mb-6">
-                                <div className={`text-5xl font-bold mb-2 ${correctCount === totalCount ? 'text-green-600' : correctCount >= totalCount / 2 ? 'text-blue-600' : 'text-orange-600'}`}>
-                                    {correctCount}/{totalCount}
-                                </div>
+            {/* Flashcards Interface - Modal Popup */}
+            {showFlashcards && !loadingFlashcards && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        {showResults ? (
+                            <div className="p-6">
+                                <div className="text-center mb-6">
+                                    <div className={`text-5xl font-bold mb-2 ${correctCount === totalCount ? 'text-green-600' : correctCount >= totalCount / 2 ? 'text-blue-600' : 'text-orange-600'}`}>
+                                        {correctCount}/{totalCount}
+                                    </div>
                                 <p className="text-gray-700 text-lg font-medium">
                                     {correctCount === totalCount ? 'Perfect Score! 🎉' :
                                         correctCount >= totalCount / 2 ? 'Good Job! 👍' :
@@ -414,6 +421,7 @@ Keep explanations clear, friendly, and easy to understand. Use plain English, av
                             </div>
                         </div>
                     ) : null}
+                </div>
                 </div>
             )}
         </div>
