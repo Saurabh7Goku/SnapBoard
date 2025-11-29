@@ -7,6 +7,7 @@ import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signO
 import { getDatabase, ref, push, set, update, remove, onValue, serverTimestamp, get } from 'firebase/database';
 import { BoardCanvas } from './dashboard/BoardCanvas';
 import { QAResponseEnhanced } from './dashboard/flashcards';
+import { MathTextbookRenderer } from './dashboard/MathTextbookRenderer';
 
 const app = initializeApp({
   apiKey: process.env.NEXT_PUBLIC_API_KEY,
@@ -322,32 +323,55 @@ const FormulaWhiteboard = () => {
 
     const systemPrompt = `You are an expert GATE Data Science and AI (DA) instructor.
 
-IMPORTANT: Format your response EXACTLY as follows with clear sections. Do not use any markdown styling, bullet points, or asterisks. Use plain text only.
+CRITICAL: Format your response EXACTLY as follows with clear sections. Do not use any markdown styling, bullet points, or asterisks. Use plain text only.
+
+IMPORTANT - MATHEMATICAL FORMATTING:
+- For inline mathematical expressions, wrap them in single dollar signs: $expression$
+- For display/block mathematical expressions, wrap them in double dollar signs: $$expression$$
+- Use proper LaTeX notation for all mathematical symbols and formulas
+- Examples:
+  * Inline: The formula $E = mc^2$ shows energy-mass equivalence
+  * Display: $$P(A|B) = \frac{P(B|A) \cdot P(A)}{P(B)}$$
+  * Greek letters: $\alpha$, $\beta$, $\mu$, $\sigma$, $\pi$, $\theta$
+  * Summation: $$\sum_{i=1}^{n} x_i$$
+  * Integration: $$\int_0^{\infty} e^{-x} dx$$
+  * Fractions: $$\frac{numerator}{denominator}$$
+  * Subscripts: $x_1$, $x_2$
+  * Superscripts: $x^2$, $e^{-x}$
 
 ---
 SECTION 1: CONCEPT EXPLANATION
-[Provide a clear, structured explanation of the topic in 3-4 paragraphs. Number key points if needed.]
+[Provide a clear, structured explanation of the topic in 3-4 paragraphs. Number key points if needed. Use $...$ for inline math and $$...$$ for display math.]
 
 ---
 SECTION 2: KEY FORMULAS AND DEFINITIONS
-[List formulas in the format: Name: formula using text notation. For example, Linear Regression Slope: m = sum((xi - mean_x)(yi - mean_y)) / sum((xi - mean_x)^2)]
+[List formulas using LaTeX notation wrapped in dollar signs. Examples:
+- Bayes' Theorem: $$P(A|B) = \frac{P(B|A) \cdot P(A)}{P(B)}$$
+- Quadratic Formula: $$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$$
+- Mean: $$\mu = \frac{1}{n}\sum_{i=1}^{n} x_i$$]
 
 ---
 SECTION 3: SOLVED GATE DA LEVEL PROBLEMS
 
-Problem 1: [Problem statement]
+Problem 1: [Problem statement with inline math if needed]
 Solution:
-[Step-by-step solution with clear numbered steps]
-Answer: [Final answer]
+1. [First step with math expressions in $...$ or $$...$$]
+2. [Second step with calculations]
+3. [Third step with final calculation]
+Answer: [Final answer with proper LaTeX notation]
 
 Problem 2: [Problem statement]
 Solution:
-[Step-by-step solution with clear numbered steps]
+1. [Step with math]
+2. [Step with math]
+3. [Step with math]
 Answer: [Final answer]
 
 Problem 3: [Problem statement]
 Solution:
-[Step-by-step solution with clear numbered steps]
+1. [Step with math]
+2. [Step with math]
+3. [Step with math]
 Answer: [Final answer]
 
 ---`;
@@ -593,7 +617,38 @@ Answer: [Final answer]
             {/* Response Section - Full Width */}
             <div className="lg:col-span-3">
               {qaResponse ? (
-                <div className="animate-fadeIn">
+                <div className="animate-fadeIn space-y-6">
+                  {/* Action Buttons at Top */}
+                  <div className="flex gap-3 mb-6 pb-6 border-b border-gray-200 flex-wrap">
+                    <button
+                      onClick={handleGenerateMore}
+                      disabled={qaLoading}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-sm hover:shadow-md font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span>✨</span>
+                      <span>Generate More Questions</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (qaResponse && !qaLoading) {
+                          // Trigger flashcard generation through QAResponseEnhanced
+                          const flashcardBtn = document.querySelector('[data-action="generate-flashcards"]');
+                          if (flashcardBtn) flashcardBtn.click();
+                        }
+                      }}
+                      disabled={qaLoading}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all shadow-sm hover:shadow-md font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span>📚</span>
+                      <span>Practice with Flashcards</span>
+                    </button>
+                  </div>
+
+                  <MathTextbookRenderer 
+                    content={qaResponse} 
+                    isLoading={qaLoading}
+                  />
+                  
                   <QAResponseEnhanced
                     qaResponse={qaResponse}
                     qaLoading={qaLoading}
@@ -601,174 +656,9 @@ Answer: [Final answer]
                     apiKey={apiKey}
                     currentTopic={qaQuery}
                   />
-
-                  {/* Original detailed response display for reference */}
-                  <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200 mt-6">
-                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>
-                    <h2 className="text-sm font-semibold text-gray-900">Generated Response</h2>
-                  </div>
-                  <div
-                    ref={responseRef}
-                    className="text-sm text-gray-900 leading-7 whitespace-pre-wrap break-words"
-                    style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
-                  >
-                    {qaResponse.split('\n').map((line, idx) => {
-                      const trimmedLine = line.trim();
-
-                      // Main Section headers (SECTION 1:, SECTION 2:, etc.) - without ---
-                      if (/^SECTION \d+:/.test(trimmedLine)) {
-                        const sectionNumber = trimmedLine.match(/SECTION (\d+)/)?.[1] || '';
-                        const sectionTitle = trimmedLine.replace(/SECTION \d+:\s*/, '');
-
-                        return (
-                          <div key={idx} className="mt-10 mb-6 first:mt-0">
-                            <div className="flex items-center gap-3 mb-3">
-                              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-600 text-white font-bold text-lg">
-                                {sectionNumber}
-                              </div>
-                              <h2 className="text-2xl font-extrabold text-gray-900 uppercase tracking-wide">
-                                {sectionTitle}
-                              </h2>
-                            </div>
-                            <div className="h-1 bg-gradient-to-r from-blue-600 via-blue-400 to-transparent rounded-full"></div>
-                          </div>
-                        );
-                      }
-
-                      // Section headers with --- prefix
-                      if (trimmedLine.startsWith('---') && trimmedLine.includes('SECTION')) {
-                        const sectionText = trimmedLine.replace(/---/g, '').trim();
-                        const sectionNumber = sectionText.match(/SECTION (\d+)/)?.[1] || '';
-                        const sectionTitle = sectionText.replace(/SECTION \d+:\s*/, '');
-
-                        return (
-                          <div key={idx} className="mt-10 mb-6 first:mt-0">
-                            <div className="flex items-center gap-3 mb-3">
-                              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-600 text-white font-bold text-lg">
-                                {sectionNumber}
-                              </div>
-                              <h2 className="text-2xl font-extrabold text-gray-900 uppercase tracking-wide">
-                                {sectionTitle}
-                              </h2>
-                            </div>
-                            <div className="h-1 bg-gradient-to-r from-blue-600 via-blue-400 to-transparent rounded-full"></div>
-                          </div>
-                        );
-                      }
-
-                      // Regular --- dividers
-                      if (trimmedLine === '---') {
-                        return <div key={idx} className="my-8 border-t-2 border-gray-200"></div>;
-                      }
-
-                      // Problem headers
-                      if (/^(Problem \d+:|^\d+$)/.test(trimmedLine)) {
-                        if (/^\d+$/.test(trimmedLine)) {
-                          return <div key={idx} className="h-2"></div>;
-                        }
-
-                        const problemMatch = trimmedLine.match(/Problem (\d+):(.*)/);
-                        const problemNum = problemMatch?.[1] || trimmedLine.match(/\d+/)?.[0] || '';
-                        const problemText = problemMatch?.[2]?.trim() || '';
-
-                        return (
-                          <div key={idx} className="mt-8 mb-4">
-                            <div className="bg-purple-50 border-l-4 border-purple-600 rounded-r-lg p-4 shadow-sm">
-                              <div className="flex items-start gap-3">
-                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 text-white font-bold text-base flex items-center justify-center">
-                                  {problemNum}
-                                </div>
-                                <div className="flex-1">
-                                  <h3 className="text-lg font-bold text-purple-900 mb-2">Problem {problemNum}</h3>
-                                  {problemText && <p className="text-gray-800 leading-relaxed">{problemText}</p>}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      // Solution: label
-                      if (trimmedLine === 'Solution' || trimmedLine.startsWith('Solution:')) {
-                        return (
-                          <div key={idx} className="mt-4 mb-3">
-                            <div className="inline-flex items-center gap-2 bg-green-100 border border-green-300 px-4 py-2 rounded-lg">
-                              <div className="w-2.5 h-2.5 bg-green-600 rounded-full"></div>
-                              <span className="font-bold text-green-800 text-base uppercase tracking-wide">Solution</span>
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      // Answer: label
-                      if (trimmedLine.startsWith('Answer:') || trimmedLine.startsWith('Final Answer:')) {
-                        const answerText = trimmedLine.replace(/^(Final )?Answer:\s*/, '').trim();
-                        return (
-                          <div key={idx} className="mt-4 mb-4">
-                            <div className="bg-green-50 border-l-4 border-green-600 rounded-r-lg p-4 shadow-sm">
-                              <div className="flex items-start gap-2">
-                                <span className="font-bold text-green-800 text-base uppercase tracking-wide flex-shrink-0">Final Answer:</span>
-                                <span className="text-gray-900 font-semibold">{answerText}</span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      // Numbered lists
-                      if (/^\d+\.?\s/.test(trimmedLine) || /^\d+$/.test(trimmedLine)) {
-                        if (/^\d+$/.test(trimmedLine)) {
-                          return <div key={idx} className="h-2"></div>;
-                        }
-
-                        const number = trimmedLine.match(/^(\d+)/)?.[1];
-                        const content = trimmedLine.replace(/^\d+\.?\s*/, '');
-
-                        return (
-                          <div key={idx} className="flex gap-3 my-3 pl-4">
-                            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center mt-0.5">
-                              {number}
-                            </div>
-                            <p className="flex-1 text-gray-800 leading-relaxed">{content}</p>
-                          </div>
-                        );
-                      }
-
-                      // Subsection headers
-                      if (trimmedLine.endsWith(':') && trimmedLine.length < 80 && !trimmedLine.startsWith('Problem') && !trimmedLine.startsWith('Solution') && !trimmedLine.startsWith('Answer')) {
-                        return (
-                          <div key={idx} className="mt-5 mb-3">
-                            <h4 className="text-base font-bold text-gray-800 flex items-center gap-2">
-                              <div className="w-1 h-5 bg-blue-500 rounded"></div>
-                              {trimmedLine}
-                            </h4>
-                          </div>
-                        );
-                      }
-
-                      // Regular paragraphs
-                      if (trimmedLine) {
-                        if (/[=≈≠<>±∑∏∫]/.test(trimmedLine)) {
-                          return (
-                            <div key={idx} className="my-3 pl-6 border-l-3 border-blue-300 bg-blue-50 py-2.5 px-3 rounded-r">
-                              <p className="text-gray-900 font-mono text-sm leading-relaxed">{line}</p>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <p key={idx} className="my-3 text-gray-800 leading-relaxed">
-                            {line}
-                          </p>
-                        );
-                      }
-
-                      return <div key={idx} className="h-1"></div>;
-                    })}
-                    {qaLoading && <span className="animate-pulse text-blue-600 ml-1 font-bold">▊</span>}
-                  </div>
                 </div>
-              ) : qaLoading ? (
+              ) : null}
+              {qaLoading ? (
                 <div className="flex items-center justify-center h-80">
                   <div className="text-center">
                     <div className="w-12 h-12 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>

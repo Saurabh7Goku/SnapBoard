@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, RotateCw, BookOpen, Sparkles } from 'lucide-react';
+import { MathTextbookRenderer } from './MathTextbookRenderer';
 
 export const QAResponseEnhanced = ({
     qaResponse,
@@ -28,8 +29,13 @@ export const QAResponseEnhanced = ({
         setLoadingFlashcards(true);
         setShowFlashcards(true);
 
-        try {
-            const prompt = `Based on the topic "${currentTopic}", create exactly 5 multiple-choice questions for GATE DA exam preparation.
+        let retries = 0;
+        const maxRetries = 3;
+        const retryDelay = 2000; // 2 seconds
+
+        const attemptGeneration = async () => {
+            try {
+                const prompt = `Based on the topic "${currentTopic}", create exactly 5 multiple-choice questions for GATE DA exam preparation.
 
 CRITICAL: Respond ONLY with valid JSON in this EXACT format (no markdown, no extra text):
 {
@@ -45,37 +51,52 @@ CRITICAL: Respond ONLY with valid JSON in this EXACT format (no markdown, no ext
 
 Make questions progressively challenging. correctAnswer is the index (0-3) of the correct option.`;
 
-            const res = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: { temperature: 0.8, maxOutputTokens: 3000 }
-                    })
+                const res = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            generationConfig: { temperature: 0.8, maxOutputTokens: 3000 }
+                        })
+                    }
+                );
+
+                // Handle rate limiting (429 error)
+                if (res.status === 429) {
+                    if (retries < maxRetries) {
+                        retries++;
+                        console.log(`Rate limited. Retrying in ${retryDelay}ms... (Attempt ${retries}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                        return attemptGeneration();
+                    } else {
+                        throw new Error('API rate limit exceeded. Please try again in a few moments.');
+                    }
                 }
-            );
 
-            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+                if (!res.ok) throw new Error(`API Error: ${res.status}`);
 
-            const data = await res.json();
-            let text = data.candidates[0].content.parts[0].text.trim();
-            text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                const data = await res.json();
+                let text = data.candidates[0].content.parts[0].text.trim();
+                text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
-            const parsed = JSON.parse(text);
-            setFlashcards(parsed.flashcards || []);
-            setCurrentCard(0);
-            setSelectedAnswer(null);
-            setAnsweredCards([]);
-            setShowResults(false);
-            setWrongAnswersExplanation('');
-        } catch (err) {
-            alert(`Error generating flashcards: ${err.message}`);
-            setShowFlashcards(false);
-        } finally {
-            setLoadingFlashcards(false);
-        }
+                const parsed = JSON.parse(text);
+                setFlashcards(parsed.flashcards || []);
+                setCurrentCard(0);
+                setSelectedAnswer(null);
+                setAnsweredCards([]);
+                setShowResults(false);
+                setWrongAnswersExplanation('');
+            } catch (err) {
+                alert(`Error generating flashcards: ${err.message}`);
+                setShowFlashcards(false);
+            } finally {
+                setLoadingFlashcards(false);
+            }
+        };
+
+        await attemptGeneration();
     };
 
     const handleAnswerSelect = (index) => {
@@ -201,6 +222,7 @@ Keep explanations clear, friendly, and easy to understand. Use plain English, av
                     </button>
                     <button
                         onClick={generateFlashcards}
+                        data-action="generate-flashcards"
                         className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all shadow-sm hover:shadow-md font-medium"
                     >
                         <BookOpen size={18} />
