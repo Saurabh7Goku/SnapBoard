@@ -51,12 +51,21 @@ const FormulaWhiteboard = () => {
   const [qaHistory, setQaHistory] = useState([]);
   const fileInputRef = useRef(null);
   const responseRef = useRef(null);
+  const [saveMessage, setSaveMessage] = useState('');
 
   useEffect(() => {
     const stored = JSON.parse(localStorage.getItem('qaHistory') || '[]');
     const filtered = stored.filter(item => Date.now() - item.timestamp < 2 * 24 * 60 * 60 * 1000);
     setQaHistory(filtered);
     localStorage.setItem('qaHistory', JSON.stringify(filtered));
+  }, []);
+
+  useEffect(() => {
+    try {
+      const localKey = localStorage.getItem('geminiApiKey');
+      if (localKey) setApiKey(localKey);
+    } catch (e) {
+    }
   }, []);
 
   const saveQaHistory = (newItem) => {
@@ -81,8 +90,22 @@ const FormulaWhiteboard = () => {
       setUser(user);
       if (user) {
         const savedKey = await get(ref(db, `users/${user.uid}/apiKey`));
-        if (savedKey.exists()) setApiKey(savedKey.val());
-        else setShowFirstTimeSetup(true);
+        const localKey = localStorage.getItem('geminiApiKey');
+
+        if (savedKey.exists()) {
+          setApiKey(savedKey.val());
+        } else if (localKey) {
+          // If user has a locally-saved key from previous visits, persist it to their account
+          setApiKey(localKey);
+          try {
+            await set(ref(db, `users/${user.uid}/apiKey`), localKey);
+          } catch (e) {
+            // ignore db write errors
+          }
+          setShowFirstTimeSetup(false);
+        } else {
+          setShowFirstTimeSetup(true);
+        }
         loadUserBoards(user.uid);
         loadSharedBoards(user.email);
         setShowDashboard(true);
@@ -114,11 +137,31 @@ const FormulaWhiteboard = () => {
   };
 
   const saveApiKey = async () => {
-    if (apiKey.trim() && user) {
-      await set(ref(db, `users/${user.uid}/apiKey`), apiKey.trim());
-      setShowKeyModal(false);
-      setShowFirstTimeSetup(false);
+    const key = apiKey.trim();
+    if (!key) return;
+
+    // Always save locally so the key persists across visits even when not signed in
+    try {
+      localStorage.setItem('geminiApiKey', key);
+    } catch (e) {
+      // ignore localStorage errors
     }
+
+    // Also save to the user's Firebase record when signed in
+    if (user) {
+      try {
+        await set(ref(db, `users/${user.uid}/apiKey`), key);
+      } catch (e) {
+        // ignore write errors
+      }
+    }
+
+    // Show a transient saved message to the user
+    setSaveMessage('Gemini API key saved');
+    setTimeout(() => setSaveMessage(''), 4000);
+
+    setShowKeyModal(false);
+    setShowFirstTimeSetup(false);
   };
 
   const loadUserBoards = (uid) => {
@@ -241,7 +284,7 @@ const FormulaWhiteboard = () => {
     try {
       const current = elements.filter(e => e.type === 'formula').map(f => ({ id: f.id, title: f.title, latex: f.latex, subject: f.subject, topic: f.topic }));
       const prompt = `You are helping organize a formula whiteboard. Current formulas: ${JSON.stringify(current)}\nUser request: "${aiPrompt}"\nRespond ONLY with valid JSON. Actions: "add", "organize", or "filter".\nFor add: {"action":"add","title":"...","latex":"...","subject":"...","topic":"..."}\nFor organize: {"action":"organize","layout":[{"id":"...","x":100,"y":100},...]}`;
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 2000 } })
@@ -307,15 +350,11 @@ Solution:
 [Step-by-step solution with clear numbered steps]
 Answer: [Final answer]
 
----
-SECTION 4: COMMON MISTAKES AND TIPS
-[List 4-5 common mistakes students make with explanations. Number them.]
-
 ---`;
 
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?key=${apiKey}&alt=sse`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?key=${apiKey}&alt=sse`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -324,19 +363,22 @@ SECTION 4: COMMON MISTAKES AND TIPS
               {
                 parts: [
                   {
-                    text: `${systemPrompt}\n\nUser Topic: "${currentTopicToUse}"\n\nProvide detailed, exam-focused content on this topic.`,
-                  },
+                    text: `${systemPrompt}\n\nUser Topic: "${currentTopicToUse}"\n\nProvide DIFFERENT and detailed, exam-focused content on this topic from a different angle or with different examples.`,
+                  }
                 ],
               },
             ],
             generationConfig: {
-              temperature: 0.7,
+              temperature: 0.8,
             },
           }),
         }
       );
 
-      if (!res.ok) throw new Error(`API Error: ${res.status}`);
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`API Error: ${res.status} - ${errText}`);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -407,7 +449,7 @@ SECTION 4: COMMON MISTAKES AND TIPS
 
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?key=${apiKey}&alt=sse`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:streamGenerateContent?key=${apiKey}&alt=sse`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -824,6 +866,29 @@ SECTION 4: COMMON MISTAKES AND TIPS
                       })
                   )}
                 </div>
+              </div>
+
+              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <div className="w-1 h-4 bg-blue-600 rounded"></div>
+                  Gemini API Key
+                </h3>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={e => setApiKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="flex-1 px-3 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 text-sm text-gray-900 placeholder-gray-400 transition-all"
+                    onKeyPress={e => e.key === 'Enter' && saveApiKey()}
+                  />
+                  <button onClick={saveApiKey} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">Save</button>
+                </div>
+                {saveMessage ? (
+                  <p className="mt-2 text-xs text-green-600">{saveMessage}</p>
+                ) : (
+                  apiKey && <p className="mt-2 text-xs text-gray-600">Saved locally; will also be saved to your account when signed in.</p>
+                )}
               </div>
             </div>
           </div>

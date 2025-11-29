@@ -192,13 +192,13 @@ Keep explanations clear, friendly, and easy to understand. Use plain English, av
             {/* Action Buttons - Only show when response is complete */}
             {qaResponse && !qaLoading && !showFlashcards && (
                 <div className="flex gap-3 mb-6 pb-6 border-b border-gray-200 flex-wrap">
-                    {/* <button
+                    <button
                         onClick={onGenerateMore}
                         className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-sm hover:shadow-md font-medium"
                     >
                         <Sparkles size={18} />
                         <span>Generate More Questions</span>
-                    </button> */}
+                    </button>
                     <button
                         onClick={generateFlashcards}
                         className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all shadow-sm hover:shadow-md font-medium"
